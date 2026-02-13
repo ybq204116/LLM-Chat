@@ -35,7 +35,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone <项目地址>
+git clone https://github.com/ybq204116/LLM-Chat
 
 # 2. 进入项目目录
 cd LLM-Chat
