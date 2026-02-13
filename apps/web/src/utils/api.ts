@@ -103,9 +103,9 @@ const refreshTokenIfNeeded = async (): Promise<string | null> => {
         if (res.data.token) {
             // 如果后端返回了新的 refreshToken，也要更新
             if (res.data.refreshToken) {
-                 authStore.setAuth(res.data.token, res.data.refreshToken, res.data.user || authStore.user);
+                authStore.setAuth(res.data.token, res.data.refreshToken, res.data.user || authStore.user);
             } else {
-                 authStore.updateAccessToken(res.data.token);
+                authStore.updateAccessToken(res.data.token);
             }
             return res.data.token
         }

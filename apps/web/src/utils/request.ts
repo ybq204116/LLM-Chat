@@ -65,17 +65,17 @@ request.interceptors.response.use(
                     const res = await axios.post('http://localhost:3000/api/auth/refresh-token', {
                         refreshToken
                     });
-                    
+
                     if (res.data.token) {
                         // 如果后端返回了新的 refreshToken，也要更新
                         if (res.data.refreshToken) {
-                             authStore.setAuth(res.data.token, res.data.refreshToken, res.data.user || authStore.user);
+                            authStore.setAuth(res.data.token, res.data.refreshToken, res.data.user || authStore.user);
                         } else {
-                             authStore.updateAccessToken(res.data.token);
+                            authStore.updateAccessToken(res.data.token);
                         }
-                        
+
                         processQueue(null, res.data.token);
-                        
+
                         // 重发原始请求
                         originalRequest.headers['Authorization'] = 'Bearer ' + res.data.token;
                         return request(originalRequest);
@@ -93,7 +93,7 @@ request.interceptors.response.use(
                 window.location.href = '/login';
             }
         }
-        
+
         return Promise.reject(error.response?.data || error.message);
     }
 );
