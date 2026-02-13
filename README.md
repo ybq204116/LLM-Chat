@@ -124,3 +124,9 @@ pnpm dev:server
 - Frequency Penalty - 重复文字惩罚
 - 最大 Token - 限制回答长度
 - 流式响应 - 开启/关闭打字机效果
+
+## 效果图
+插入images文件夹的图片
+![test-1.png](./images/test-1.png)
+![test-2.png](./images/test-2.png)
+![test-3.png](./images/test-3.png)
