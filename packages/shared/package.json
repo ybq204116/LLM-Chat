@@ -1,0 +1,16 @@
+{
+  "name": "@llm-chat/shared",
+  "version": "1.0.0",
+  "description": "Shared types and utilities for LLM-Chat",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "llm-chat-monorepo",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "dev:server": "pnpm --filter server dev",
+    "dev": "pnpm -r --parallel dev"
+  }
+}
