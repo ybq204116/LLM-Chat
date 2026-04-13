@@ -39,8 +39,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        if (password.length < 6) {
-            res.status(400).json({ message: '密码至少需要6个字符' });
+        // 密码需8位以上包含数字大小写特殊字符
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+        if (!passwordRegex.test(password)) {
+            res.status(400).json({ message: '密码必须至少8位，且包含大小写字母、数字和特殊字符' });
             return;
         }
 

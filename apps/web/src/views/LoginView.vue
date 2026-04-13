@@ -77,8 +77,9 @@ const handleSubmit = async () => {
     if (form.username.length < 3) {
       return ElMessage.warning('用户名至少需要3个字符');
     }
-    if (form.password.length < 6) {
-      return ElMessage.warning('密码至少需要6个字符');
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+    if (!passwordRegex.test(form.password)) {
+      return ElMessage.warning('密码必须至少8位，且包含大小写字母、数字和特殊字符');
     }
     const phoneRegex = /^1[3-9]\d{9}$/;
     if (!phoneRegex.test(form.phoneNumber)) {
