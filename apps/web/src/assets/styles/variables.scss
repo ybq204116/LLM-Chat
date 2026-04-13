@@ -8,23 +8,30 @@
   --info-color: #909399;
 
   // 背景色
-  --bg-color: #ffffff;
-  --bg-color-secondary: #f5f7fa;
+  --bg-color: #f7f9fa;
+  --bg-color-secondary: #ffffff;
+  
+  // 毛玻璃
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-backdrop-filter: blur(20px);
   
   // 文字颜色
-  --text-color-primary: #303133;
-  --text-color-regular: #606266;
-  --text-color-secondary: #909399;
+  --text-color-primary: #1a1b1e;
+  --text-color-regular: #4b5563;
+  --text-color-secondary: #9ca3af;
 
   // 边框颜色
-  --border-color: #dcdfe6;
+  --border-color: #e5e7eb;
   
   // 阴影
-  --box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --box-shadow-floating: 0 10px 40px rgba(0, 0, 0, 0.1);
   
   // 圆角
-  --border-radius: 20px;
-  --border-radius-large: 30px;
+  --border-radius: 12px;
+  --border-radius-large: 16px;
+  --border-radius-pill: 9999px;
 
   // 代码相关的颜色和字体
   --code-font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -35,13 +42,21 @@
 }
 
 [data-theme="dark"] {
-  --bg-color: #1a1a1a;
-  --bg-color-secondary: #242424;
-  --text-color-primary: #ffffff;
-  --text-color-regular: #e0e0e0;
-  --text-color-secondary: #909399;
-  --border-color: #4c4c4c;
-  --box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.3);
+  --bg-color: #0b0f19;
+  --bg-color-secondary: #111827;
+  
+  // 毛玻璃暗色
+  --glass-bg: rgba(17, 24, 39, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.05);
+
+  --text-color-primary: #f3f4f6;
+  --text-color-regular: #d1d5db;
+  --text-color-secondary: #9ca3af;
+  
+  --border-color: #1f2937;
+  
+  --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --box-shadow-floating: 0 10px 40px rgba(0, 0, 0, 0.5);
 
   // 暗色模式下代码相关的颜色
   --code-block-bg: #1e1e1e;

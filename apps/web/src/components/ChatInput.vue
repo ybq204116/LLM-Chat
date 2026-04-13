@@ -252,10 +252,11 @@ const handleStop = () => {
 
 <style lang="scss" scoped>
 // 聊天输入容器的样式
+// 聊天输入容器的样式
 .chat-input-container {
-  padding: 0.3rem;
-  background-color: var(--bg-color);
-  border-top: 1px solid var(--border-color);
+  padding: 1rem;
+  background-color: transparent;
+  border-top: none;
 }
 .el-button--primary {
   border-radius: var(--border-radius); /* 调整为你想要的圆角大小 */
@@ -266,17 +267,23 @@ const handleStop = () => {
 .input-wrapper {
   display: flex;
   gap: 1rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 
   .el-input {
     flex: 1;
 
     :deep(.el-textarea__inner) {
       transition: all 0.3s;
-      line-height: 1.5;
-      padding: 8px 12px;
+      line-height: 1.6;
+      padding: 12px 16px;
       overflow-y: auto;
+      border: none;
+      background: transparent;
+      box-shadow: none;
       
+      &:focus {
+        box-shadow: none;
+      }
     }
   }
 }

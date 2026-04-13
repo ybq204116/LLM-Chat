@@ -475,41 +475,46 @@ const handleStop = () => {
   width: 100%;
   height: 100vh;
   overflow: hidden;
+  background-color: var(--bg-color-secondary);
 }
 
-/* 定义聊天容器的样式，占据整个视口高度，使用flex布局以支持列方向的布局 */
 .chat-container {
     flex: 1;
-    min-width: 0; /* 防止内容溢出 */
+    min-width: 0;
     height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* 控制溢出 */
+    overflow: hidden;
+    position: relative;
+    background-color: var(--bg-color);
 }
 
-/* 设置聊天头部的样式，包括对齐方式和背景色等 */
 .chat-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background-color: var(--bg-color);
+    padding: 1.25rem 2rem;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-backdrop-filter);
     border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 10;
 
-    /* 设置聊天头部标题的样式，无默认间距，自定义字体大小和颜色 */
     h1 {
         margin: 0;
         font-size: 1.5rem;
+        font-weight: 600;
         color: var(--text-color-primary);
+        letter-spacing: -0.5px;
     }
 }
 
-/* 定义消息容器的样式，占据剩余空间，支持滚动，自定义背景色 */
 .messages-container {
     flex: 1;
-    overflow: hidden; /* 虚拟滚动组件自带滚动条 */
-    padding: 1rem;
-    background-color: var(--bg-color-secondary);
+    overflow: hidden; 
+    padding: 2rem 1rem 8rem; /* Bottom padding to avoid overlap with floating input */
+    background-color: transparent;
     position: relative;
 }
 
@@ -517,11 +522,27 @@ const handleStop = () => {
     height: 100%;
 }
 
-/* 设置空状态时的样式，占据全部高度，居中对齐内容 */
 .empty-state {
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* Optional wrapper for floating the chat component.
+   Real floating will likely be applied inside ChatInput component directly or overridden via deep selector */
+:deep(.chat-input-container) {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    min-width: 400px;
+    max-width: 800px;
+    box-shadow: var(--box-shadow-floating);
+    border-radius: var(--border-radius-large);
+    background: var(--bg-color-secondary);
+    z-index: 20;
+    border: 1px solid var(--border-color);
 }
 </style>

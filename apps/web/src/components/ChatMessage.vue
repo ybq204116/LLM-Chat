@@ -243,9 +243,29 @@ const handleCopyAll = async () => {
   // 用户消息样式
   &.message-user {
     flex-direction: row-reverse;
-    //翻转实现用户布局在右侧
     .message-content {
       align-items: flex-end;
+    }
+    
+    .message-text {
+      background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-light-3));
+      color: #ffffff;
+      border-bottom-right-radius: 4px;
+      
+      /* Make sure markdown elements inside user bubbles inherit the white text color */
+      .markdown-body {
+        color: #ffffff;
+        * { color: inherit; }
+        code { background-color: rgba(0,0,0,0.1); color: #fff; }
+        pre { background-color: rgba(0,0,0,0.15); border: none; }
+        a { color: #fff; text-decoration: underline; }
+      }
+    }
+  }
+  
+  &.message-assistant {
+    .message-text {
+      border-bottom-left-radius: 4px;
     }
   }
 
@@ -461,10 +481,11 @@ const handleCopyAll = async () => {
 
 .message-text {
   background-color: var(--bg-color);
-  padding: 1rem;
-  border-radius: var(--border-radius);
+  padding: 1rem 1.25rem;
+  border-radius: var(--border-radius-large);
   box-shadow: var(--box-shadow);
   white-space: pre-wrap;
+  transition: background-color 0.3s;
 
   // 如果存在思考内容，调整回答内容的样式
   .reasoning-content + .markdown-body {

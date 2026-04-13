@@ -7,7 +7,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-color-primary);
   line-height: 1.6;
@@ -33,4 +33,32 @@ body {
 .slide-fade-leave-to {
   transform: translateY(10px);
   opacity: 0;
+}
+
+// Element Plus UI Overrides for Premium Redesign
+:root {
+  --el-color-primary: var(--primary-color) !important;
+  --el-border-radius-base: var(--border-radius) !important;
+  --el-border-radius-round: var(--border-radius-large) !important;
+  --el-bg-color: var(--bg-color-secondary) !important;
+  --el-border-color: var(--border-color) !important;
+  --el-box-shadow: var(--box-shadow) !important;
+  --el-box-shadow-light: var(--box-shadow) !important;
+}
+
+html.dark {
+  --el-bg-color: var(--bg-color-secondary) !important;
+  --el-bg-color-page: var(--bg-color) !important;
+  --el-bg-color-overlay: var(--bg-color-secondary) !important;
+  --el-text-color-primary: var(--text-color-primary) !important;
+  --el-text-color-regular: var(--text-color-regular) !important;
+  --el-border-color: var(--border-color) !important;
+}
+
+// Glassmorphism Utilities
+.glass-effect {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+  border: 1px solid var(--glass-border);
 }
