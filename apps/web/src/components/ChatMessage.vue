@@ -486,6 +486,16 @@ const handleCopyAll = async () => {
   box-shadow: var(--box-shadow);
   white-space: pre-wrap;
   transition: background-color 0.3s;
+  font-size: 15px;
+  line-height: 1.6;
+
+  :deep(.markdown-body) {
+    font-size: 15px;
+    p {
+      font-size: 15px;
+      line-height: 1.6;
+    }
+  }
 
   // 如果存在思考内容，调整回答内容的样式
   .reasoning-content + .markdown-body {
