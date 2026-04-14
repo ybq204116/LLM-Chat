@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { Setting } from '@element-plus/icons-vue'
+import { Setting, Download } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chat'
 import { useSettingsStore, useModelOptions } from '../stores/settings'
 import { sendMessageStream, sendMessage as sendApiMessage, sendImageGeneration, ApiError } from '../utils/api'
@@ -407,6 +407,49 @@ const handleStop = () => {
     chatStore.currentGeneratingId = null
     chatStore.isLoading = false
 }
+
+// 导出为 Markdown 处理函数
+const handleExport = () => {
+    if (!chatStore.messages || chatStore.messages.length === 0) {
+        ElMessage.warning('当前没有可导出的对话记录')
+        return
+    }
+    
+    let markdownContent = ''
+    
+    // Find title
+    let conversationTitle = 'LLM_Chat_Export'
+    if (chatStore.activeConversationId) {
+        const currentConv = chatStore.conversations?.find((c: any) => c._id === chatStore.activeConversationId)
+        if (currentConv && currentConv.title) {
+            conversationTitle = currentConv.title
+        }
+    }
+    
+    markdownContent += `# ${conversationTitle}\n\n`
+    
+    chatStore.messages.forEach((msg: any) => {
+        if (msg.role === 'user') {
+            markdownContent += `### 🧑‍💻 用户\n\n${msg.content}\n\n---\n\n`
+        } else if (msg.role === 'assistant') {
+            markdownContent += `### 🤖 助手\n\n${msg.content}\n\n---\n\n`
+        }
+    })
+    
+    const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    // Sanitize title for filename
+    const safeTitle = conversationTitle.replace(/[\\/:*?"<>|]/g, '_')
+    a.download = `${safeTitle}_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('导出 Markdown 成功！')
+}
 </script>
 
 <template>
@@ -420,7 +463,12 @@ const handleStop = () => {
             <div class="chat-header">
                 <h1>LLM Chat</h1>
                 <search-bar @select="handleSearchSelect" />
-                <el-button circle :icon="Setting" @click="showSettings = true" />
+                <div class="header-actions">
+                    <el-tooltip content="导出对话为 Markdown" placement="bottom">
+                        <el-button circle :icon="Download" @click="handleExport" />
+                    </el-tooltip>
+                    <el-button circle :icon="Setting" @click="showSettings = true" />
+                </div>
             </div>
 
             <!-- 消息容器，显示对话消息 -->
@@ -507,6 +555,12 @@ const handleStop = () => {
         font-weight: 600;
         color: var(--text-color-primary);
         letter-spacing: -0.5px;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
     }
 }
 
