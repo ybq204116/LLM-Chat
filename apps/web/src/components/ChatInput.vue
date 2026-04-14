@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { Delete, Position, Upload, Plus, Document, VideoPlay, MagicStick } from '@element-plus/icons-vue'
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import mammoth from 'mammoth'
@@ -40,6 +40,43 @@ Shift + Enter 换行`
 
 const showUpload = ref(false)
 const selectedFiles = ref<File[]>([])
+const isDragging = ref(false)
+
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault()
+  if (!isDragging.value) isDragging.value = true
+}
+
+const handleDragLeave = (e: DragEvent) => {
+  e.preventDefault()
+  if (!e.relatedTarget || (e.relatedTarget as Element).nodeName === 'HTML') {
+    isDragging.value = false
+  }
+}
+
+const handleDrop = (e: DragEvent) => {
+  e.preventDefault()
+  isDragging.value = false
+  if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+    const files = Array.from(e.dataTransfer.files)
+    files.forEach(file => {
+      selectedFiles.value.push(file)
+    })
+    showUpload.value = true
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('dragover', handleDragOver)
+  window.addEventListener('dragleave', handleDragLeave)
+  window.addEventListener('drop', handleDrop)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('dragover', handleDragOver)
+  window.removeEventListener('dragleave', handleDragLeave)
+  window.removeEventListener('drop', handleDrop)
+})
 
 // 切换上传区域显示
 const toggleUpload = () => {
@@ -151,7 +188,28 @@ const readFileContent = async (file: File) => {
   }
 }
 
+const previewDialogVisible = ref(false)
+const previewFileName = ref('')
+const previewFileContent = ref('')
+const isPreviewLoading = ref(false)
 
+const handlePreviewFile = async (file: File) => {
+  if (isImage(file)) return
+  
+  previewFileName.value = file.name
+  previewDialogVisible.value = true
+  isPreviewLoading.value = true
+  previewFileContent.value = ''
+  
+  try {
+    const content = await readFileContent(file) as string
+    previewFileContent.value = content.replace(/^```document\n/, '').replace(/\n```$/, '')
+  } catch (error) {
+    previewFileContent.value = '文件解析失败或不支持预览：\n' + error
+  } finally {
+    isPreviewLoading.value = false
+  }
+}
 
 // 处理清空对话的函数
 const handleClear = async () => {
@@ -265,9 +323,17 @@ const handleStop = () => {
         <div class="preview-list" v-if="selectedFiles.length">
           <div v-for="(file, index) in selectedFiles" :key="index" class="preview-item">
             <!-- 图片预览 -->
-            <img v-if="isImage(file)" :src="getPreviewUrl(file)" class="preview-image" />
+            <el-image 
+              v-if="isImage(file)" 
+              :src="getPreviewUrl(file)" 
+              :preview-src-list="selectedFiles.filter(isImage).map(getPreviewUrl)"
+              :initial-index="selectedFiles.filter(isImage).findIndex(f => f === file)"
+              class="preview-image" 
+              fit="cover"
+              hide-on-click-modal
+            />
             <!-- 文件名预览 -->
-            <div v-else class="file-preview">
+            <div v-else class="file-preview" @click="handlePreviewFile(file)">
               <el-icon>
                 <Document />
               </el-icon>
@@ -312,6 +378,26 @@ const handleStop = () => {
         </el-button>
       </div>
     </div>
+
+    <!-- 拖拽遮罩层 -->
+    <div v-show="isDragging" class="drag-overlay">
+      <div class="drag-content">
+        <el-icon class="drag-icon"><Upload /></el-icon>
+        <span>松开鼠标上传文件</span>
+      </div>
+    </div>
+
+    <!-- 文件预览对话框 -->
+    <el-dialog v-model="previewDialogVisible" :title="previewFileName" width="60%">
+      <div class="preview-dialog-body" v-loading="isPreviewLoading">
+        <el-input
+          v-model="previewFileContent"
+          type="textarea"
+          :autosize="{ minRows: 10, maxRows: 20 }"
+          readonly
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -397,6 +483,12 @@ const handleStop = () => {
         justify-content: center;
         background-color: var(--bg-color-secondary);
         border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: opacity 0.3s;
+
+        &:hover {
+          opacity: 0.8;
+        }
 
         .el-icon {
           font-size: 2rem;
@@ -441,5 +533,44 @@ const handleStop = () => {
   100% {
     opacity: 1;
   }
+}
+
+.drag-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+
+  .drag-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+
+    .drag-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      animation: bounce 1s infinite alternate;
+    }
+  }
+}
+
+@keyframes bounce {
+  from { transform: translateY(0); }
+  to { transform: translateY(-20px); }
+}
+
+.preview-dialog-body {
+  min-height: 200px;
 }
 </style>
