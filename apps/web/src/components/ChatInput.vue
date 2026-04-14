@@ -331,6 +331,7 @@ const handleStop = () => {
               class="preview-image" 
               fit="cover"
               hide-on-click-modal
+              :preview-teleported="true"
             />
             <!-- 文件名预览 -->
             <div v-else class="file-preview" @click="handlePreviewFile(file)">
@@ -388,7 +389,7 @@ const handleStop = () => {
     </div>
 
     <!-- 文件预览对话框 -->
-    <el-dialog v-model="previewDialogVisible" :title="previewFileName" width="60%">
+    <el-dialog v-model="previewDialogVisible" :title="previewFileName" width="60%" append-to-body>
       <div class="preview-dialog-body" v-loading="isPreviewLoading">
         <el-input
           v-model="previewFileContent"
