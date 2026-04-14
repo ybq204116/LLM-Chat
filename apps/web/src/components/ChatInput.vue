@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick } from 'vue'
-import { Delete, Position, Upload, Plus, Document, VideoPlay } from '@element-plus/icons-vue'
+import { ref, nextTick } from 'vue'
+import { Delete, Position, Upload, Plus, Document, VideoPlay, MagicStick } from '@element-plus/icons-vue'
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import mammoth from 'mammoth'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -27,68 +27,12 @@ const emit = defineEmits(['send', 'clear', 'stop'])
 // 消息文本的响应式引用
 const messageText = ref('')
 
-import { usePromptsStore } from '../stores/prompts'
-const promptsStore = usePromptsStore()
-const showPromptMenu = ref(false)
-const promptSearchKeyword = ref('')
-const promptSelectedIndex = ref(0)
-const filteredPrompts = computed(() => promptsStore.searchPrompts(promptSearchKeyword.value))
+import { sendMessage as sendApiMessage } from '../utils/api'
+import { useSettingsStore } from '../stores/settings'
 
-watch(messageText, (val) => {
-  if (val.startsWith('/')) {
-    showPromptMenu.value = true
-    promptSearchKeyword.value = val.slice(1).trim()
-    promptSelectedIndex.value = 0
-  } else {
-    showPromptMenu.value = false
-  }
-})
+const isOptimizing = ref(false)
 
-const selectPrompt = (prompt: any) => {
-  if (!prompt) return
-  messageText.value = prompt.content
-  showPromptMenu.value = false
-  
-  nextTick(() => {
-    inputRef.value?.focus()
-    adjustHeight()
-  })
-}
 
-const handleKeydown = (evt: Event | KeyboardEvent) => {
-  const e = evt as KeyboardEvent
-  if(!e.key) return
-  
-  if (showPromptMenu.value) {
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      promptSelectedIndex.value = (promptSelectedIndex.value - 1 + filteredPrompts.value.length) % filteredPrompts.value.length
-      return
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      promptSelectedIndex.value = (promptSelectedIndex.value + 1) % filteredPrompts.value.length
-      return
-    }
-    if (e.key === 'Enter') {
-      if (!e.shiftKey) {
-        e.preventDefault()
-        selectPrompt(filteredPrompts.value[promptSelectedIndex.value])
-        return
-      }
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      showPromptMenu.value = false
-      return
-    }
-  } else {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-}
 
 // 输入框的占位符
 const placeholder = `输入消息，按Enter发送
@@ -243,6 +187,56 @@ const adjustHeight = () => {
   }
 }
 
+const optimizePrompt = async () => {
+  if (!messageText.value.trim() || isOptimizing.value) return
+
+  isOptimizing.value = true
+  const originalText = messageText.value
+  
+  try {
+    const settingsStore = useSettingsStore()
+    const metaPrompt = "你是一个专业的大语言模型Prompt工程师。请将用户输入的简单意图，扩写为一个详细、结构清晰、逻辑严密的优质Prompt，不仅要明确角色和任务，还能给出适当的约束以保证模型输出最佳结果。请直接返回优化后的Prompt文本，不要包含任何前言、后语或注释。"
+    
+    const messages = [
+        { role: 'user' as const, content: `${metaPrompt}\n\n请优化以下内容：\n${originalText}` }
+    ]
+    
+    const payload = {
+        model: settingsStore.model,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: settingsStore.maxTokens,
+        stream: false
+    }
+
+    const result = await sendApiMessage(payload)
+    const optimizedContent = result.choices[0]?.message?.content || ''
+    
+    if (optimizedContent) {
+      messageText.value = optimizedContent.trim()
+      ElMessage.success('提示词优化成功')
+      nextTick(() => {
+        adjustHeight()
+      })
+    }
+  } catch (error) {
+    console.error('提示词优化失败:', error)
+    ElMessage.error('提示词优化失败，请重试')
+  } finally {
+    isOptimizing.value = false
+  }
+}
+
+const handleKeydown = (evt: Event | KeyboardEvent) => {
+  const e = evt as KeyboardEvent
+  if(!e.key) return
+  
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault()
+    handleSend()
+  }
+}
+
 // 添加暂停处理函数
 const handleStop = () => {
   emit('stop')
@@ -253,24 +247,7 @@ const handleStop = () => {
   <!-- 聊天输入容器 -->
   <div class="chat-input-container">
     <!-- Slash Command Menu -->
-    <Transition name="slide-up">
-      <div class="prompt-menu glass-effect" v-if="showPromptMenu && filteredPrompts.length > 0">
-        <div 
-          v-for="(prompt, index) in filteredPrompts" 
-          :key="prompt.id"
-          class="prompt-item"
-          :class="{ 'is-active': index === promptSelectedIndex }"
-          @click="selectPrompt(prompt)"
-          @mouseenter="promptSelectedIndex = index"
-        >
-          <div class="prompt-icon"><el-icon><component :is="prompt.icon" /></el-icon></div>
-          <div class="prompt-info">
-            <div class="prompt-command">/{{ prompt.command }}</div>
-            <div class="prompt-title">{{ prompt.title }}</div>
-          </div>
-        </div>
-      </div>
-    </Transition>
+
 
     <!-- 输入框和按钮的组合 -->
     <div class="input-wrapper">
@@ -317,6 +294,10 @@ const handleStop = () => {
           <el-button circle type="danger" :icon="Delete" @click="handleClear" />
         </el-tooltip>
 
+        <el-tooltip content="魔法棒（优化提示词）" placement="top">
+          <el-button circle type="warning" :icon="MagicStick" :loading="isOptimizing" @click="optimizePrompt" />
+        </el-tooltip>
+
         <el-button 
           :type="generating ? 'danger' : 'primary'" 
           :loading="loading && !generating" 
@@ -344,72 +325,7 @@ const handleStop = () => {
   position: relative; // added for absolute positioning of prompt-menu
 }
 
-.prompt-menu {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 0;
-  width: 100%;
-  max-height: 250px;
-  overflow-y: auto;
-  border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow-floating);
-  display: flex;
-  flex-direction: column;
-  padding: 0.5rem;
-  z-index: 50;
 
-  .prompt-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    transition: background-color 0.2s;
-
-    &.is-active, &:hover {
-      background-color: var(--el-color-primary-light-9);
-    }
-
-    .prompt-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      background-color: var(--bg-color);
-      border-radius: 8px;
-      color: var(--primary-color);
-      font-size: 1.2rem;
-    }
-
-    .prompt-info {
-      display: flex;
-      flex-direction: column;
-
-      .prompt-command {
-        font-weight: 600;
-        color: var(--text-color-primary);
-        font-size: 0.9rem;
-      }
-      .prompt-title {
-        color: var(--text-color-secondary);
-        font-size: 0.8rem;
-      }
-    }
-  }
-}
-
-/* 动画效果 */
-.slide-up-enter-active,
-.slide-up-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slide-up-enter-from,
-.slide-up-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
-}
 .el-button--primary {
   border-radius: var(--border-radius); /* 调整为你想要的圆角大小 */
 }
