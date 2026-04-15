@@ -34,6 +34,17 @@ export interface IConversation {
     updatedAt: string | Date;
 }
 
+// 笔记接口
+export interface INote {
+    _id: string;
+    userId: string;
+    title: string;
+    content: string;
+    isPinned: boolean;
+    createdAt: string | Date;
+    updatedAt: string | Date;
+}
+
 // API 响应通用结构
 export interface IApiResponse<T = any> {
     message?: string;

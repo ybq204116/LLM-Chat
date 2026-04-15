@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import authRoutes from './routes/authRoutes';
 import chatRoutes from './routes/chatRoutes';
+import noteRoutes from './routes/noteRoutes';
 
 dotenv.config();
 
@@ -18,6 +19,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/notes', noteRoutes);
 
 // 连接 MongoDB
 mongoose.connect(MONGODB_URI)

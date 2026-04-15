@@ -1,28 +1,68 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
-import { Fold, Expand, Plus, Delete, Edit, SwitchButton } from '@element-plus/icons-vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
+import { Fold, Expand, Plus, Delete, Edit, SwitchButton, Document, Message } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chat'
+import { useNoteStore } from '../stores/note'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessageBox, ElInput } from 'element-plus'
 
 const isCollapsed = ref(false)
+
+// Note section collapse state
+const isNotesCollapsed = ref(false)
+const isChatsCollapsed = ref(false)
+
 const chatStore = useChatStore()
+const noteStore = useNoteStore()
 const authStore = useAuthStore()
 const router = useRouter()
 
 const conversations = computed(() => chatStore.conversations)
-const activeId = computed(() => chatStore.activeConversationId)
+const activeChatId = computed(() => chatStore.activeConversationId)
+const notes = computed(() => noteStore.notes)
+const activeNoteId = computed(() => noteStore.activeNoteId)
 
-const editingId = ref<string | null>(null)
-const editTitle = ref('')
-const editInputRef = ref<InstanceType<typeof ElInput>[] | null>(null)
-
-// 初始化加载对话列表
-chatStore.fetchConversations()
+// Initialize - fetch both conversations and notes
+onMounted(() => {
+  chatStore.fetchConversations()
+  noteStore.fetchNotes()
+})
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value
+}
+
+// Note section methods
+const toggleNotesSection = () => {
+  isNotesCollapsed.value = !isNotesCollapsed.value
+}
+
+const createNewNote = () => {
+  noteStore.createNote()
+}
+
+const switchNote = (id: string) => {
+  noteStore.setActiveNote(id)
+}
+
+const deleteNote = async (id: string, event: Event) => {
+  event.stopPropagation()
+  try {
+    await ElMessageBox.confirm('确定要删除这个笔记吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    noteStore.deleteNote(id)
+  } catch {
+    // User cancelled
+  }
+}
+
+// Chat section methods
+const toggleChatsSection = () => {
+  isChatsCollapsed.value = !isChatsCollapsed.value
 }
 
 const createNewChat = () => {
@@ -33,7 +73,8 @@ const switchConversation = (id: string) => {
   chatStore.setActiveConversation(id)
 }
 
-const deleteConversation = async (id: string) => {
+const deleteConversation = async (id: string, event: Event) => {
+  event.stopPropagation()
   try {
     await ElMessageBox.confirm('确定要删除这个会话吗？', '提示', {
       confirmButtonText: '确定',
@@ -42,40 +83,81 @@ const deleteConversation = async (id: string) => {
     })
     chatStore.deleteConversation(id)
   } catch {
-    // 用户取消删除操作
+    // User cancelled
   }
 }
 
-const startRename = async (conv: { _id: string, title: string }, event: Event) => {
+// Note title editing
+const editingNoteId = ref<string | null>(null)
+const editNoteTitle = ref('')
+const editNoteInputRef = ref<InstanceType<typeof ElInput>[] | null>(null)
+
+const startRenameNote = async (note: { _id: string, title: string }, event: Event) => {
   event.stopPropagation()
-  editingId.value = conv._id
-  editTitle.value = conv.title
+  editingNoteId.value = note._id
+  editNoteTitle.value = note.title
   await nextTick()
-  if (editInputRef.value && editInputRef.value.length > 0) {
-    editInputRef.value[0]?.focus()
+  if (editNoteInputRef.value && editNoteInputRef.value.length > 0) {
+    editNoteInputRef.value[0]?.focus()
   }
 }
 
-const saveRename = async (conv: { _id: string }) => {
-  if (editTitle.value.trim()) {
-    await chatStore.updateConversationTitle(conv._id, editTitle.value.trim())
+const saveRenameNote = async (note: { _id: string }) => {
+  if (editNoteTitle.value.trim()) {
+    await noteStore.updateNote(note._id, { title: editNoteTitle.value.trim() })
   }
-  editingId.value = null
+  editingNoteId.value = null
 }
 
-const cancelRename = () => {
-  editingId.value = null
+const cancelRenameNote = () => {
+  editingNoteId.value = null
 }
 
-const handleRenameKeydown = (conv: { _id: string }, event: KeyboardEvent) => {
+const handleNoteRenameKeydown = (note: { _id: string }, event: KeyboardEvent) => {
   if (event.key === 'Enter') {
     event.preventDefault()
-    saveRename(conv)
+    saveRenameNote(note)
   } else if (event.key === 'Escape') {
-    cancelRename()
+    cancelRenameNote()
   }
 }
 
+// Chat title editing
+const editingChatId = ref<string | null>(null)
+const editChatTitle = ref('')
+const editChatInputRef = ref<InstanceType<typeof ElInput>[] | null>(null)
+
+const startRenameChat = async (conv: { _id: string, title: string }, event: Event) => {
+  event.stopPropagation()
+  editingChatId.value = conv._id
+  editChatTitle.value = conv.title
+  await nextTick()
+  if (editChatInputRef.value && editChatInputRef.value.length > 0) {
+    editChatInputRef.value[0]?.focus()
+  }
+}
+
+const saveRenameChat = async (conv: { _id: string }) => {
+  if (editChatTitle.value.trim()) {
+    await chatStore.updateConversationTitle(conv._id, editChatTitle.value.trim())
+  }
+  editingChatId.value = null
+}
+
+const cancelRenameChat = () => {
+  editingChatId.value = null
+}
+
+const handleChatRenameKeydown = (conv: { _id: string }, event: KeyboardEvent) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    saveRenameChat(conv)
+  } else if (event.key === 'Escape') {
+    cancelRenameChat()
+  }
+}
+
+// Logout
 const handleLogout = async () => {
   try {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
@@ -86,51 +168,138 @@ const handleLogout = async () => {
     authStore.logout()
     router.push('/login')
   } catch {
-    // 用户取消操作
+    // User cancelled
   }
 }
 </script>
 
 <template>
   <div class="sidebar" :class="{ 'collapsed': isCollapsed }">
-    <div class="sidebar-header">
-      <el-button v-if="!isCollapsed" type="primary" @click="createNewChat">
-        <el-icon><Plus /></el-icon>新建会话
-      </el-button>
-      <el-button v-else circle type="primary" @click="createNewChat">
-        <el-icon><Plus /></el-icon>
-      </el-button>
+    <!-- Sidebar Header -->
+    <div class="sidebar-header" v-if="!isCollapsed">
+      <div class="sidebar-title">
+        <span>LLM Chat</span>
+      </div>
     </div>
 
-    <div class="conversations-list">
-      <div v-for="conv in conversations" 
-           :key="conv._id" 
-           class="conversation-item"
-           :class="{ 'active': conv._id === activeId }"
-           @click="switchConversation(conv._id)">
-        <div v-if="editingId === conv._id" class="conversation-edit" @click.stop>
-          <el-input
-            v-model="editTitle"
-            size="small"
-            @keydown="(e: any) => handleRenameKeydown(conv, e)"
-            @blur="saveRename(conv)"
-            ref="editInputRef"
-          />
+    <!-- Main Content -->
+    <div class="sidebar-content" v-if="!isCollapsed">
+      <!-- Notes Section -->
+      <div class="section notes-section">
+        <div class="section-header" @click="toggleNotesSection">
+          <div class="section-title">
+            <el-icon class="section-icon">
+              <Document />
+            </el-icon>
+            <span>笔记</span>
+          </div>
+          <div class="section-actions">
+            <el-button link size="small" @click.stop="createNewNote">
+              <el-icon><Plus /></el-icon>
+            </el-button>
+            <el-icon class="collapse-icon" :class="{ 'collapsed': isNotesCollapsed }">
+              <Fold />
+            </el-icon>
+          </div>
         </div>
-        <div v-else class="conversation-title" :title="conv.title">
-          {{ isCollapsed ? '💭' : conv.title }}
+
+        <div class="section-list" v-show="!isNotesCollapsed">
+          <div
+            v-for="note in notes"
+            :key="note._id"
+            class="list-item"
+            :class="{ 'active': note._id === activeNoteId }"
+            @click="switchNote(note._id)"
+          >
+            <div v-if="editingNoteId === note._id" class="item-edit" @click.stop>
+              <el-input
+                v-model="editNoteTitle"
+                size="small"
+                @keydown="(e: any) => handleNoteRenameKeydown(note, e)"
+                @blur="saveRenameNote(note)"
+                ref="editNoteInputRef"
+              />
+            </div>
+            <template v-else>
+              <span class="item-title" :title="note.title">
+                {{ note.isPinned ? '📌 ' : '' }}{{ note.title }}
+              </span>
+              <div class="item-actions">
+                <el-button link size="small" @click.stop="startRenameNote(note, $event)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button link size="small" type="danger" @click.stop="deleteNote(note._id, $event)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </template>
+          </div>
+
+          <div v-if="notes.length === 0" class="empty-hint">
+            暂无笔记
+          </div>
         </div>
-        <div v-if="!isCollapsed" class="conversation-actions">
-          <el-button link size="small" @click.stop="startRename(conv, $event)">
-            <el-icon><Edit /></el-icon>
-          </el-button>
-          <el-button link size="small" type="danger" @click.stop="deleteConversation(conv._id)">
-            <el-icon><Delete /></el-icon>
-          </el-button>
+      </div>
+
+      <!-- Chats Section -->
+      <div class="section chats-section">
+        <div class="section-header" @click="toggleChatsSection">
+          <div class="section-title">
+            <el-icon class="section-icon">
+              <Message />
+            </el-icon>
+            <span>AI 会话</span>
+          </div>
+          <div class="section-actions">
+            <el-button link size="small" @click.stop="createNewChat">
+              <el-icon><Plus /></el-icon>
+            </el-button>
+            <el-icon class="collapse-icon" :class="{ 'collapsed': isChatsCollapsed }">
+              <Fold />
+            </el-icon>
+          </div>
+        </div>
+
+        <div class="section-list" v-show="!isChatsCollapsed">
+          <div
+            v-for="conv in conversations"
+            :key="conv._id"
+            class="list-item"
+            :class="{ 'active': conv._id === activeChatId }"
+            @click="switchConversation(conv._id)"
+          >
+            <div v-if="editingChatId === conv._id" class="item-edit" @click.stop>
+              <el-input
+                v-model="editChatTitle"
+                size="small"
+                @keydown="(e: any) => handleChatRenameKeydown(conv, e)"
+                @blur="saveRenameChat(conv)"
+                ref="editChatInputRef"
+              />
+            </div>
+            <template v-else>
+              <span class="item-title" :title="conv.title">
+                {{ conv.title }}
+              </span>
+              <div class="item-actions">
+                <el-button link size="small" @click.stop="startRenameChat(conv, $event)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button link size="small" type="danger" @click.stop="deleteConversation(conv._id, $event)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </template>
+          </div>
+
+          <div v-if="conversations.length === 0" class="empty-hint">
+            暂无会话
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- Sidebar Footer -->
     <div class="sidebar-footer">
       <el-button v-if="!isCollapsed" type="danger" plain @click="handleLogout" class="logout-btn">
         <el-icon><SwitchButton /></el-icon>退出登录
@@ -140,6 +309,7 @@ const handleLogout = async () => {
       </el-button>
     </div>
 
+    <!-- Collapse Button -->
     <div class="collapse-btn" @click="toggleSidebar">
       <el-icon>
         <Fold v-if="!isCollapsed" />
@@ -154,14 +324,14 @@ const handleLogout = async () => {
   width: 260px;
   height: 100%;
   flex-shrink: 0;
-  background-color: var(--bg-color-secondary); /* Give it a subtle contrast to the main chat area */
+  background-color: var(--bg-color-secondary);
   border-right: 1px solid var(--border-color);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   display: flex;
   flex-direction: column;
   z-index: 20;
-  
+
   &.collapsed {
     width: 60px;
   }
@@ -170,12 +340,138 @@ const handleLogout = async () => {
 .sidebar-header {
   padding: 1rem;
   border-bottom: 1px solid var(--border-color);
+
+  .sidebar-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-color-primary);
+  }
 }
 
-.conversations-list {
+.sidebar-content {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+
+  &.notes-section {
+    border-bottom: 1px solid var(--border-color);
+  }
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: var(--bg-color);
+  }
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-color-secondary);
+
+  .section-icon {
+    font-size: 1rem;
+  }
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  .collapse-icon {
+    transition: transform 0.3s;
+    font-size: 0.9rem;
+    color: var(--text-color-secondary);
+
+    &.collapsed {
+      transform: rotate(90deg);
+    }
+  }
+}
+
+.section-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: var(--bg-color);
+    .item-actions {
+      opacity: 1;
+    }
+  }
+
+  &.active {
+    background-color: var(--el-color-primary-light-9);
+  }
+}
+
+.item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.item-edit {
+  flex: 1;
+
+  :deep(.el-input__inner) {
+    height: 24px;
+    line-height: 24px;
+  }
+}
+
+.item-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  .el-button {
+    padding: 2px;
+    height: 20px;
+
+    .el-icon {
+      font-size: 12px;
+    }
+  }
+}
+
+.empty-hint {
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-color-secondary);
 }
 
 .sidebar-footer {
@@ -193,63 +489,6 @@ const handleLogout = async () => {
   }
 }
 
-.conversation-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem;
-  margin-bottom: 0.5rem;
-  border-radius: var(--border-radius);
-  cursor: pointer;
-  transition: background-color 0.2s;
-
-  &:hover {
-    background-color: var(--bg-color-secondary);
-    .conversation-actions {
-      opacity: 1;
-    }
-  }
-
-  &.active {
-    background-color: var(--el-color-primary-light-9);
-  }
-}
-
-.conversation-title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.conversation-edit {
-  flex: 1;
-  margin-right: 0.5rem;
-  
-  :deep(.el-input__inner) {
-    height: 24px;
-    line-height: 24px;
-  }
-}
-
-.conversation-actions {
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.edit-btn, .delete-btn {
-  padding: 2px;
-  height: 20px;
-  
-  .el-icon {
-    font-size: 14px;
-  }
-}
-
-/* Buttons now use global Element Plus variables set in root css */
-
 .collapse-btn {
   position: absolute;
   right: -12px;
@@ -265,6 +504,7 @@ const handleLogout = async () => {
   justify-content: center;
   cursor: pointer;
   z-index: 1;
+  transition: background-color 0.2s;
 
   &:hover {
     background-color: var(--bg-color-secondary);
