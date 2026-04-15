@@ -30,7 +30,7 @@ export interface SyncImageResponse {
 
 export const messageHandler = {
     // 格式化消息
-    formatMessage(role: 'user' | 'assistant', content: string): IMessage {
+    formatMessage(role: 'user' | 'assistant' | 'system' | 'tool', content: string, tool_call_id?: string): IMessage {
         const hasImage = content.includes('![') && content.includes('](data:image/')
 
         return {
@@ -39,7 +39,8 @@ export const messageHandler = {
             content,
             hasImage,
             loading: false,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            ...(tool_call_id ? { tool_call_id } : {})
         };
     },
 

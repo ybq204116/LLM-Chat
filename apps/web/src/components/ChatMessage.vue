@@ -2,7 +2,7 @@
 import { computed, ref, nextTick } from 'vue'
 import { renderMarkdown } from '../utils/markdown'
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Delete, RefreshRight, CopyDocument, Lightning } from '@element-plus/icons-vue'
+import { Edit, Delete, RefreshRight, CopyDocument, Lightning, Setting } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chat'
 
 
@@ -138,13 +138,14 @@ const handleCopyAll = async () => {
   <div 
     class="message-container"
     :class="[
-      message.role === 'assistant' ? 'message-assistant' : 'message-user',
+      message.role === 'assistant' ? 'message-assistant' : 
+      message.role === 'tool' ? 'message-tool' : 'message-user',
       { 'loading': loading }
     ]"
     :data-message-id="message._id || message.timestamp"
   >
     <!-- 消息头像，根据消息角色显示不同图标 -->
-    <div class="message-avatar">
+    <div class="message-avatar" v-if="message.role !== 'tool'">
       <el-avatar 
         :icon="message.role === 'assistant' ? 'ChatRound' : 'User'"
         :class="message.role"
@@ -163,8 +164,11 @@ const handleCopyAll = async () => {
             <!-- 使用 v-html 渲染 Markdown 内容 -->
             <div class="markdown-body" v-html="renderMarkdown(message.reasoning_content)"></div>
         </div>
-        <!-- 回答内容 -->
-        <div class="markdown-body" v-html="renderedContent" @click="handleCodeBlockClick"></div>
+        <div class="markdown-body" v-html="renderedContent" @click="handleCodeBlockClick" v-if="message.role !== 'tool'"></div>
+        <div class="tool-content" v-if="message.role === 'tool'">
+            <el-icon><Setting /></el-icon>
+            <span>工具执行结果已返回</span>
+        </div>
       </div>
 
       <!-- 编辑模式 -->
@@ -266,6 +270,27 @@ const handleCopyAll = async () => {
   &.message-assistant {
     .message-text {
       border-bottom-left-radius: 4px;
+    }
+  }
+
+  &.message-tool {
+    justify-content: center;
+    .message-content {
+      max-width: 100%;
+    }
+    .message-text {
+      background-color: transparent;
+      box-shadow: none;
+      padding: 0.5rem;
+      border: 1px dashed var(--border-color);
+      color: var(--text-color-secondary);
+      font-size: 0.85rem;
+      
+      .tool-content {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
     }
   }
 

@@ -8,12 +8,21 @@ const messageSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'assistant', 'system'],
+    enum: ['user', 'assistant', 'system', 'tool'],
     required: true,
   },
   content: {
     type: String,
-    required: true,
+    required: false,
+    default: '',
+  },
+  tool_calls: {
+    type: Array,
+    required: false,
+  },
+  tool_call_id: {
+    type: String,
+    required: false,
   },
   timestamp: {
     type: Date,

@@ -14,9 +14,11 @@ export interface IUser {
 export interface IMessage {
     _id?: string;
     conversationId?: string;
-    role: 'user' | 'assistant' | 'system';
+    role: 'user' | 'assistant' | 'system' | 'tool';
     content: string;
     reasoning_content?: string;
+    tool_calls?: any[];
+    tool_call_id?: string;
     hasImage?: boolean; // 前端辅助字段
     loading?: boolean;  // 前端辅助字段
     timestamp?: string | Date;

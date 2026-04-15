@@ -27,7 +27,7 @@ interface ChatPayload {
             description: string
             name: string
             parameters: Record<string, unknown>
-            strict: boolean
+            strict?: boolean
         }
     }>
 }
@@ -143,7 +143,7 @@ const fetchWithRetry = async (url: string, options: RequestInit): Promise<Respon
  */
 export const sendMessageStream = async (
     payload: ChatPayload,
-    onChunk: (content: string, reasoning?: string) => void,
+    onChunk: (content: string, reasoning?: string, tool_calls?: any[]) => void,
     onComplete: () => void,
     onError: (error: ApiError) => void,
     signal?: AbortSignal
@@ -174,6 +174,7 @@ export const sendMessageStream = async (
         const decoder = new TextDecoder();
         let fullContent = '';
         let fullReasoning = '';
+        let fullToolCalls: any[] | undefined = undefined;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -191,11 +192,30 @@ export const sendMessageStream = async (
                         const parsed = JSON.parse(data);
                         const content = parsed.choices[0]?.delta?.content || '';
                         const reasoning = parsed.choices[0]?.delta?.reasoning_content || '';
+                        const tool_calls = parsed.choices[0]?.delta?.tool_calls;
 
-                        if (content || reasoning) {
+                        if (tool_calls) {
+                            if (!fullToolCalls) fullToolCalls = [];
+                            for (const tc of tool_calls) {
+                                const index = tc.index;
+                                if (!fullToolCalls[index]) {
+                                    fullToolCalls[index] = { 
+                                        id: tc.id, 
+                                        type: 'function', 
+                                        function: { name: tc.function?.name || '', arguments: tc.function?.arguments || '' } 
+                                    };
+                                } else {
+                                    if (tc.function?.arguments) {
+                                        fullToolCalls[index].function.arguments += tc.function.arguments;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (content || reasoning || tool_calls) {
                             fullContent += content;
                             fullReasoning += reasoning;
-                            onChunk(fullContent, fullReasoning);
+                            onChunk(fullContent, fullReasoning, fullToolCalls);
                         }
                     } catch (e) {
                         // 忽略解析失败的 chunk

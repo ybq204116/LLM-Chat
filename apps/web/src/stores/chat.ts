@@ -96,7 +96,9 @@ export const useChatStore = defineStore('chat', {
           const res: any = await request.post('/chat/messages', {
             conversationId: this.activeConversationId,
             role: message.role,
-            content: message.content
+            content: message.content || '',
+            tool_calls: message.tool_calls,
+            tool_call_id: message.tool_call_id
           })
           // 更新本地消息的 _id
           if (res && res._id) {
@@ -109,12 +111,15 @@ export const useChatStore = defineStore('chat', {
     },
 
     // 5. 更新最后一条消息（用于流式输出）
-    updateLastMessage(content: string, reasoning_content?: string) {
+    updateLastMessage(content: string, reasoning_content?: string, tool_calls?: any[]) {
       if (this.messages.length > 0) {
         const lastMsg = this.messages[this.messages.length - 1]
         lastMsg.content = content
         if (reasoning_content) {
           lastMsg.reasoning_content = reasoning_content
+        }
+        if (tool_calls) {
+          lastMsg.tool_calls = tool_calls
         }
       }
     },
@@ -130,7 +135,8 @@ export const useChatStore = defineStore('chat', {
         const res: any = await request.post('/chat/messages', {
           conversationId: this.activeConversationId,
           role: 'assistant',
-          content: lastMsg.content
+          content: lastMsg.content || '',
+          tool_calls: lastMsg.tool_calls
         })
         // 更新本地消息的 _id
         if (res && res._id) {

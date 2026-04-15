@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chat'
 import { useSettingsStore, useModelOptions } from '../stores/settings'
 import { sendMessageStream, sendMessage as sendApiMessage, sendImageGeneration, ApiError } from '../utils/api'
 import { messageHandler } from '../utils/messageHandler'
+import { availableTools, executeTool } from '../utils/plugins'
 import ChatMessage from '../components/ChatMessage.vue'
 import ChatInput from '../components/ChatInput.vue'
 import SettingsPanel from '../components/SettingsPanel.vue'
@@ -26,7 +27,9 @@ const abortController = ref<AbortController | null>(null)
 
 // 转换消息列表以适配虚拟滚动
 const virtualMessages = computed(() => {
-    return chatStore.messages.map((m: any, index: number) => ({
+    return chatStore.messages
+      .filter((m: any) => !(m.role === 'assistant' && (!m.content || m.content.trim() === '') && m.tool_calls && m.tool_calls.length > 0))
+      .map((m: any, index: number) => ({
         ...m,
         // 确保每条消息都有唯一ID
         // 1. 如果有 _id，使用 _id
@@ -117,7 +120,7 @@ const createVLMMessage = () => {
 }
 
 // 发送LLM/VLM消息
-const sendMessage = async (modelType: string) => {
+const sendMessage = async (modelType: string): Promise<void> => {
     console.log('发送LLM/VLM消息')
     try {
         const settingsStore = useSettingsStore()
@@ -127,28 +130,46 @@ const sendMessage = async (modelType: string) => {
 
         const messages = modelType === 'visual' 
             ? createVLMMessage().slice(0, -1)
-            : currentChatMessages.value.slice(0, -1).map(m => ({
-                role: m.role as 'user' | 'assistant',
-                content: m.content
-              }))
+            : currentChatMessages.value.slice(0, -1).map(m => {
+                const mapped: any = { role: m.role, content: m.content || '' }
+                if (m.tool_calls) mapped.tool_calls = m.tool_calls
+                if (m.tool_call_id) mapped.tool_call_id = m.tool_call_id
+                return mapped
+              })
 
         const payload = {
             model: settingsStore.model,
             messages: messages as any,
             temperature: settingsStore.temperature,
             max_tokens: settingsStore.maxTokens,
-            stream: settingsStore.streamResponse
+            stream: settingsStore.streamResponse,
+            tools: availableTools
         }
 
         if (settingsStore.streamResponse) {
             await sendMessageStream(
                 payload,
-                (content, reasoning_content) => {
-                    chatStore.updateLastMessage(content, reasoning_content)
+                (content, reasoning_content, tool_calls) => {
+                    chatStore.updateLastMessage(content, reasoning_content, tool_calls)
                 },
                 async () => {
                     // 生成完成后，保存 AI 的完整回复到后端
                     await chatStore.saveLastMessage()
+                    
+                    const lastMsg = currentChatMessages.value[currentChatMessages.value.length - 1]
+                    if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+                        for (const tc of lastMsg.tool_calls) {
+                            if (tc.type === 'function') {
+                                const resultStr = await executeTool(tc.function.name, tc.function.arguments)
+                                await chatStore.addMessage(messageHandler.formatMessage('tool', resultStr, tc.id), true)
+                            }
+                        }
+                        
+                        chatStore.addMessage(messageHandler.formatMessage('assistant', ''), false)
+                        await sendMessage(modelType)
+                        return
+                    }
+
                     chatStore.currentGeneratingId = null
                     chatStore.isLoading = false
                     abortController.value = null
@@ -162,8 +183,23 @@ const sendMessage = async (modelType: string) => {
             const result = await sendApiMessage(payload, abortController.value.signal)
             const content = result.choices[0]?.message?.content || ''
             const reasoning = result.choices[0]?.message?.reasoning_content || ''
-            chatStore.updateLastMessage(content, reasoning)
+            const tool_calls = (result.choices[0]?.message as any)?.tool_calls
+            chatStore.updateLastMessage(content, reasoning, tool_calls)
             await chatStore.saveLastMessage()
+            
+            const lastMsg = currentChatMessages.value[currentChatMessages.value.length - 1]
+            if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+                for (const tc of lastMsg.tool_calls) {
+                    if (tc.type === 'function') {
+                        const resultStr = await executeTool(tc.function.name, tc.function.arguments)
+                        await chatStore.addMessage(messageHandler.formatMessage('tool', resultStr, tc.id), true)
+                    }
+                }
+                chatStore.addMessage(messageHandler.formatMessage('assistant', ''), false)
+                await sendMessage(modelType)
+                return
+            }
+
             chatStore.currentGeneratingId = null
             chatStore.isLoading = false
             abortController.value = null
