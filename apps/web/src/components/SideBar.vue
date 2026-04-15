@@ -38,12 +38,16 @@ const toggleNotesSection = () => {
   isNotesCollapsed.value = !isNotesCollapsed.value
 }
 
-const createNewNote = () => {
-  noteStore.createNote()
+const createNewNote = async () => {
+  const id = await noteStore.createNote()
+  if (id) {
+    router.push(`/notes/${id}`)
+  }
 }
 
-const switchNote = (id: string) => {
-  noteStore.setActiveNote(id)
+const switchNote = async (id: string) => {
+  await noteStore.setActiveNote(id)
+  router.push(`/notes/${id}`)
 }
 
 const deleteNote = async (id: string, event: Event) => {
@@ -65,12 +69,16 @@ const toggleChatsSection = () => {
   isChatsCollapsed.value = !isChatsCollapsed.value
 }
 
-const createNewChat = () => {
-  chatStore.createConversation()
+const createNewChat = async () => {
+  const id = await chatStore.createConversation()
+  if (id) {
+    router.push('/')
+  }
 }
 
-const switchConversation = (id: string) => {
-  chatStore.setActiveConversation(id)
+const switchConversation = async (id: string) => {
+  await chatStore.setActiveConversation(id)
+  router.push('/')
 }
 
 const deleteConversation = async (id: string, event: Event) => {

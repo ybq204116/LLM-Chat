@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import ChatView from '../views/ChatView.vue';
 import LoginView from '../views/LoginView.vue';
+import NoteView from '../views/NoteView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -10,6 +11,12 @@ const router = createRouter({
       path: '/',
       name: 'chat',
       component: ChatView,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/notes/:noteId?',
+      name: 'note',
+      component: NoteView,
       meta: { requiresAuth: true }
     },
     {
