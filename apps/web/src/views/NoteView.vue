@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import SideBar from '../components/SideBar.vue'
@@ -13,6 +13,7 @@ const noteStore = useNoteStore()
 const localTitle = ref('')
 const localContent = ref('')
 const isSaving = ref(false)
+const editorRef = ref<HTMLTextAreaElement | null>(null)
 
 const activeNote = computed(() => noteStore.activeNoteContent)
 const renderedContent = computed(() => renderMarkdown(localContent.value))
@@ -58,6 +59,34 @@ onMounted(async () => {
   await loadNoteFromRoute()
 })
 
+const insertIntoEditor = async (text: string) => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+
+  localContent.value = localContent.value.slice(0, start) + text + localContent.value.slice(end)
+
+  await nextTick()
+  editor.focus()
+  const cursor = start + text.length
+  editor.setSelectionRange(cursor, cursor)
+}
+
+const insertBodySyntax = async () => {
+  await insertIntoEditor('')
+}
+
+const insertTitleSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  await insertIntoEditor(needsNewline ? '\n# ' : '# ')
+}
+
 const saveNote = async () => {
   if (!noteStore.activeNoteId) return
 
@@ -79,21 +108,19 @@ const saveNote = async () => {
     <SideBar />
 
     <div class="note-container">
-      <div class="note-header">
-        <input
-          v-model="localTitle"
-          class="title-input"
-          placeholder="请输入笔记标题"
-        />
-        <el-button type="primary" :loading="isSaving" @click="saveNote">
-          保存
-        </el-button>
+      <div class="note-toolbar">
+        <div class="toolbar-right">
+          <el-button @click="insertBodySyntax">正文</el-button>
+          <el-button @click="insertTitleSyntax">标题</el-button>
+        </div>
+        <el-button type="primary" :loading="isSaving" @click="saveNote">保存</el-button>
       </div>
 
       <div class="note-main">
         <div class="editor-pane">
           <textarea
             v-model="localContent"
+            ref="editorRef"
             class="editor"
             placeholder="在这里输入 Markdown 内容..."
           />
@@ -123,7 +150,7 @@ const saveNote = async () => {
   background-color: var(--bg-color);
 }
 
-.note-header {
+.note-toolbar {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -132,6 +159,13 @@ const saveNote = async () => {
   border-bottom: 1px solid var(--border-color);
   background: var(--glass-bg);
   backdrop-filter: var(--glass-backdrop-filter);
+}
+
+
+.toolbar-right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .title-input {
