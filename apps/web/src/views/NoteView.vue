@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import SideBar from '../components/SideBar.vue'
@@ -14,6 +14,9 @@ const localTitle = ref('')
 const localContent = ref('')
 const isSaving = ref(false)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
+const noteMainRef = ref<HTMLElement | null>(null)
+const editorPaneWidth = ref(50)
+const isResizing = ref(false)
 
 const activeNote = computed(() => noteStore.activeNoteContent)
 const renderedContent = computed(() => renderMarkdown(localContent.value))
@@ -144,6 +147,41 @@ const insertStrikethroughSyntax = async () => {
   await wrapSelection('~~')
 }
 
+const insertLinkSyntax = async () => {
+  await wrapSelection('[', '](url)', '链接文本')
+}
+
+const insertQuoteSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+  
+  if (selected) {
+    const quoted = selected.split('\n').map(line => `> ${line}`).join('\n')
+    localContent.value = localContent.value.slice(0, start) + quoted + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start, start + quoted.length)
+  } else {
+    const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+    const prefix = needsNewline ? '\n> ' : '> '
+    await insertIntoEditor(prefix)
+  }
+}
+
+const insertDividerSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  const text = needsNewline ? '\n---\n' : '---\n'
+  await insertIntoEditor(text)
+}
+
 const saveNote = async () => {
   if (!noteStore.activeNoteId) return
 
@@ -158,6 +196,65 @@ const saveNote = async () => {
     isSaving.value = false
   }
 }
+
+const normalizeExternalUrl = (href: string): string => {
+  const trimmed = href.trim()
+  if (!trimmed) return ''
+
+  if (/^(https?:|mailto:|tel:)/i.test(trimmed)) {
+    return trimmed
+  }
+
+  return `https://${trimmed}`
+}
+
+const handlePreviewLinkClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  const anchor = target?.closest('a') as HTMLAnchorElement | null
+  if (!anchor) return
+
+  const href = anchor.getAttribute('href')
+  if (!href) return
+
+  const url = normalizeExternalUrl(href)
+  if (!url) return
+
+  event.preventDefault()
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const handleResizeMove = (event: MouseEvent) => {
+  if (!isResizing.value || !noteMainRef.value) return
+
+  const rect = noteMainRef.value.getBoundingClientRect()
+  if (!rect.width) return
+
+  const rawPercent = ((event.clientX - rect.left) / rect.width) * 100
+  editorPaneWidth.value = Math.min(75, Math.max(25, rawPercent))
+}
+
+const stopResize = () => {
+  if (!isResizing.value) return
+
+  isResizing.value = false
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+  window.removeEventListener('mousemove', handleResizeMove)
+  window.removeEventListener('mouseup', stopResize)
+}
+
+const startResize = (event: MouseEvent) => {
+  event.preventDefault()
+  isResizing.value = true
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+  window.addEventListener('mousemove', handleResizeMove)
+  window.addEventListener('mouseup', stopResize)
+}
+
+onUnmounted(() => {
+  stopResize()
+})
 </script>
 
 <template>
@@ -199,6 +296,18 @@ const saveNote = async () => {
           <div class="toolbar-btn" @click="insertStrikethroughSyntax" title="删除线">
             <span style="text-decoration: line-through">S</span>
           </div>
+
+          <div class="toolbar-divider"></div>
+
+          <div class="toolbar-btn" @click="insertLinkSyntax" title="链接">
+            <el-icon><Link /></el-icon>
+          </div>
+          <div class="toolbar-btn" @click="insertQuoteSyntax" title="引用">
+            <span>"</span>
+          </div>
+          <div class="toolbar-btn" @click="insertDividerSyntax" title="分割线">
+            <span>—</span>
+          </div>
         </div>
 
         <div class="toolbar-right">
@@ -206,8 +315,8 @@ const saveNote = async () => {
         </div>
       </div>
 
-      <div class="note-main">
-        <div class="editor-pane">
+      <div class="note-main" ref="noteMainRef">
+        <div class="editor-pane" :style="{ width: `${editorPaneWidth}%` }">
           <textarea
             v-model="localContent"
             ref="editorRef"
@@ -215,8 +324,9 @@ const saveNote = async () => {
             placeholder="在这里输入 Markdown 内容..."
           />
         </div>
-        <div class="preview-pane">
-          <div class="markdown-body" v-html="renderedContent" />
+        <div class="resize-handle" @mousedown="startResize" />
+        <div class="preview-pane" :style="{ width: `${100 - editorPaneWidth}%` }">
+          <div class="markdown-body" v-html="renderedContent" @click="handlePreviewLinkClick" />
         </div>
       </div>
     </div>
@@ -325,8 +435,7 @@ const saveNote = async () => {
 .note-main {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
 }
 
 .editor-pane,
@@ -335,8 +444,17 @@ const saveNote = async () => {
   overflow: auto;
 }
 
-.editor-pane {
+.resize-handle {
+  width: 8px;
+  cursor: col-resize;
+  background-color: transparent;
+  border-left: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
+  transition: background-color 0.2s ease;
+}
+
+.resize-handle:hover {
+  background-color: var(--bg-color-secondary);
 }
 
 .editor {
@@ -355,5 +473,88 @@ const saveNote = async () => {
 
 .preview-pane {
   padding: 18px;
+
+  :deep(.markdown-body) {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-color-primary);
+
+    h1, h2, h3, h4, h5, h6 {
+      margin: 1rem 0 0.5rem;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0.5rem 0;
+      white-space: pre-wrap;
+    }
+
+    a {
+      color: var(--primary-color);
+      
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    blockquote {
+      margin: 1rem 0;
+      padding: 0.5rem 1rem;
+      color: var(--text-color-regular);
+      background-color: transparent;
+      border-left: 4px solid var(--border-color);
+      border-radius: 0 4px 4px 0;
+      
+      p {
+        margin: 0;
+        &::before {
+          content: '"';
+        }
+        &::after {
+          content: '"';
+        }
+      }
+    }
+
+    hr {
+      height: 1px;
+      padding: 0;
+      margin: 1.5rem 0;
+      background-color: #000;
+      border: 0;
+    }
+
+    ul, ol {
+      padding-left: 2em;
+      margin: 0.5rem 0;
+    }
+
+    code {
+      font-family: var(--code-font-family);
+      padding: 0.2em 0.4em;
+      margin: 0;
+      font-size: 85%;
+      background-color: var(--code-bg);
+      border-radius: var(--border-radius);
+      color: var(--code-text);
+    }
+
+    pre {
+      padding: 1rem;
+      overflow: auto;
+      font-size: 85%;
+      line-height: 1.45;
+      background-color: var(--code-block-bg);
+      border-radius: var(--border-radius);
+      margin: 0.5rem 0;
+      border: 1px solid var(--border-color);
+      
+      code {
+        padding: 0;
+        background-color: transparent;
+      }
+    }
+  }
 }
 </style>

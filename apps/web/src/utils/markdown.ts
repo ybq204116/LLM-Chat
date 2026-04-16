@@ -14,7 +14,7 @@ const md = new MarkdownIt({
   highlight: function (str: string, lang: string): string {
     const language = lang || ''
     const isDocument = language === 'document'
-    
+
     if (language && hljs.getLanguage(language)) {
       try {
         const highlighted = hljs.highlight(str, {
@@ -31,7 +31,7 @@ const md = new MarkdownIt({
         return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><code>${md.utils.escapeHtml(str)}</code></pre>`
       }
     }
-    
+
     // 如果没有语言标识或者是 document 类型（但 hljs 不认识 document）
     return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><div class="code-header">
       <span class="code-lang">${isDocument ? 'DOCUMENT' : language}</span>
@@ -73,11 +73,8 @@ const renderLatex = (tex: string, displayMode: boolean): string => {
 
 // 定义公式格式正则表达式
 const INLINE_MATH_RULES = [
-  /\$([^$]+)\$/,           // $...$
-  /\[([^\]]+)\]/,         // [...]
-  /\\\((.*?)\\\)/,        // \(...\)
-  /\$(.*?)\$/,             // $...$（单行）
-  /\\\[([\s\S]+?)\\\]/    // \[...\]
+  /\$([^$\n]+)\$/,        // $...$（行内，避免跨行）
+  /\\\((.+?)\\\)/         // \(...\)
 ]
 
 const BLOCK_MATH_RULES = [
@@ -131,6 +128,33 @@ md.renderer.rules.math_inline = (tokens, idx) => {
 
 md.renderer.rules.math_block = (tokens, idx) => {
   return renderLatex(tokens[idx].content, true)
+}
+
+// 修改默认的链接渲染，添加 target="_blank"
+const defaultRender = md.renderer.rules.link_open || function (tokens, idx, options, _env, self) {
+  return self.renderToken(tokens, idx, options)
+}
+
+md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
+  const aIndex = tokens[idx].attrIndex('target')
+  if (aIndex < 0) {
+    tokens[idx].attrPush(['target', '_blank'])
+  } else {
+    if (tokens[idx].attrs && tokens[idx].attrs[aIndex]) {
+      tokens[idx].attrs[aIndex][1] = '_blank'
+    }
+  }
+
+  const relIndex = tokens[idx].attrIndex('rel')
+  if (relIndex < 0) {
+    tokens[idx].attrPush(['rel', 'noopener noreferrer'])
+  } else {
+    if (tokens[idx].attrs && tokens[idx].attrs[relIndex]) {
+      tokens[idx].attrs[relIndex][1] = 'noopener noreferrer'
+    }
+  }
+
+  return defaultRender(tokens, idx, options, env, self)
 }
 
 // 导出渲染函数
