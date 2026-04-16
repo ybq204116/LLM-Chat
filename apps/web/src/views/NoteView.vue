@@ -74,17 +74,65 @@ const insertIntoEditor = async (text: string) => {
   editor.setSelectionRange(cursor, cursor)
 }
 
-const insertBodySyntax = async () => {
-  await insertIntoEditor('')
+const wrapSelection = async (prefix: string, suffix: string = prefix, placeholder: string = '文本') => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+  const content = selected || placeholder
+  const inserted = `${prefix}${content}${suffix}`
+
+  localContent.value = localContent.value.slice(0, start) + inserted + localContent.value.slice(end)
+
+  await nextTick()
+  editor.focus()
+
+  if (selected) {
+    editor.setSelectionRange(start + inserted.length, start + inserted.length)
+    return
+  }
+
+  const selectStart = start + prefix.length
+  const selectEnd = selectStart + placeholder.length
+  editor.setSelectionRange(selectStart, selectEnd)
 }
 
-const insertTitleSyntax = async () => {
+const insertBodySyntax = async () => {
+  await insertIntoEditor('\n\n')
+}
+
+const insertTitleSyntax = async (level: number) => {
   const editor = editorRef.value
   if (!editor) return
 
   const start = editor.selectionStart ?? localContent.value.length
   const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
-  await insertIntoEditor(needsNewline ? '\n# ' : '# ')
+  const headingPrefix = `${'#'.repeat(level)} `
+  await insertIntoEditor(needsNewline ? `\n${headingPrefix}` : headingPrefix)
+}
+
+const handleHeadingCommand = async (command: string | number) => {
+  const level = Number(command)
+  if (Number.isNaN(level) || level < 1 || level > 6) return
+  await insertTitleSyntax(level)
+}
+
+const insertBoldSyntax = async () => {
+  await wrapSelection('**')
+}
+
+const insertItalicSyntax = async () => {
+  await wrapSelection('*')
+}
+
+const insertUnderlineSyntax = async () => {
+  await wrapSelection('<u>', '</u>')
+}
+
+const insertStrikethroughSyntax = async () => {
+  await wrapSelection('~~')
 }
 
 const saveNote = async () => {
@@ -111,7 +159,25 @@ const saveNote = async () => {
       <div class="note-toolbar">
         <div class="toolbar-right">
           <el-button @click="insertBodySyntax">正文</el-button>
-          <el-button @click="insertTitleSyntax">标题</el-button>
+          <el-dropdown trigger="click" @command="handleHeadingCommand">
+            <el-button>
+              标题
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item :command="1">一级标题</el-dropdown-item>
+                <el-dropdown-item :command="2">二级标题</el-dropdown-item>
+                <el-dropdown-item :command="3">三级标题</el-dropdown-item>
+                <el-dropdown-item :command="4">四级标题</el-dropdown-item>
+                <el-dropdown-item :command="5">五级标题</el-dropdown-item>
+                <el-dropdown-item :command="6">六级标题</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button @click="insertBoldSyntax">粗体</el-button>
+          <el-button @click="insertItalicSyntax">斜体</el-button>
+          <el-button @click="insertUnderlineSyntax">下划线</el-button>
+          <el-button @click="insertStrikethroughSyntax">删除线</el-button>
         </div>
         <el-button type="primary" :loading="isSaving" @click="saveNote">保存</el-button>
       </div>
