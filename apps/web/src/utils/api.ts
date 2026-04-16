@@ -109,7 +109,7 @@ const refreshTokenIfNeeded = async (): Promise<string | null> => {
             }
             return res.data.token
         }
-    } catch (error) {
+    } catch {
         authStore.logout()
         window.location.href = '/login'
     }
@@ -217,7 +217,7 @@ export const sendMessageStream = async (
                             fullReasoning += reasoning;
                             onChunk(fullContent, fullReasoning, fullToolCalls);
                         }
-                    } catch (e) {
+                    } catch {
                         // 忽略解析失败的 chunk
                     }
                 }

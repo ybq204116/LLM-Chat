@@ -175,7 +175,6 @@ export const executeTool = async (name: string, argsStr: string): Promise<string
                 if (!/^[0-9+\-*/().\s]+$/.test(exp)) {
                     return "计算错误：包含不安全的字符，仅支持基本数字与数学符号。";
                 }
-                // eslint-disable-next-line no-eval
                 const result = eval(exp);
                 return `计算结果：${result}`;
             }

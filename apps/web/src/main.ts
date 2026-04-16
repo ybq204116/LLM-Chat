@@ -11,7 +11,7 @@ import router from './router'
 // 使用深色代码主题
 import 'highlight.js/styles/github-dark.css'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
-// @ts-ignore
+
 import VueVirtualScroller from 'vue-virtual-scroller'
 
 const app = createApp(App)
