@@ -99,10 +99,6 @@ const wrapSelection = async (prefix: string, suffix: string = prefix, placeholde
   editor.setSelectionRange(selectStart, selectEnd)
 }
 
-const insertBodySyntax = async () => {
-  await insertIntoEditor('\n\n')
-}
-
 const insertTitleSyntax = async (level: number) => {
   const editor = editorRef.value
   if (!editor) return
@@ -113,10 +109,23 @@ const insertTitleSyntax = async (level: number) => {
   await insertIntoEditor(needsNewline ? `\n${headingPrefix}` : headingPrefix)
 }
 
-const handleHeadingCommand = async (command: string | number) => {
-  const level = Number(command)
-  if (Number.isNaN(level) || level < 1 || level > 6) return
-  await insertTitleSyntax(level)
+const focusEditor = async () => {
+  await nextTick()
+  editorRef.value?.focus()
+}
+
+const handleTextStyleCommand = async (command: string) => {
+  if (command === 'body') {
+    await focusEditor()
+    return
+  }
+
+  if (command.startsWith('h')) {
+    const level = Number(command.slice(1))
+    if (!Number.isNaN(level) && level >= 1 && level <= 6) {
+      await insertTitleSyntax(level)
+    }
+  }
 }
 
 const insertBoldSyntax = async () => {
@@ -157,29 +166,44 @@ const saveNote = async () => {
 
     <div class="note-container">
       <div class="note-toolbar">
-        <div class="toolbar-right">
-          <el-button @click="insertBodySyntax">正文</el-button>
-          <el-dropdown trigger="click" @command="handleHeadingCommand">
-            <el-button>
-              标题
-            </el-button>
+        <div class="toolbar-middle">
+          <el-dropdown trigger="click" @command="handleTextStyleCommand" class="toolbar-dropdown">
+            <span class="toolbar-btn dropdown-trigger">
+              正文 / 标题
+              <el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item :command="1">一级标题</el-dropdown-item>
-                <el-dropdown-item :command="2">二级标题</el-dropdown-item>
-                <el-dropdown-item :command="3">三级标题</el-dropdown-item>
-                <el-dropdown-item :command="4">四级标题</el-dropdown-item>
-                <el-dropdown-item :command="5">五级标题</el-dropdown-item>
-                <el-dropdown-item :command="6">六级标题</el-dropdown-item>
+                <el-dropdown-item command="body">正文</el-dropdown-item>
+                <el-dropdown-item command="h1" class="h1-item">一级标题</el-dropdown-item>
+                <el-dropdown-item command="h2" class="h2-item">二级标题</el-dropdown-item>
+                <el-dropdown-item command="h3" class="h3-item">三级标题</el-dropdown-item>
+                <el-dropdown-item command="h4" class="h4-item">四级标题</el-dropdown-item>
+                <el-dropdown-item command="h5" class="h5-item">五级标题</el-dropdown-item>
+                <el-dropdown-item command="h6" class="h6-item">六级标题</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-button @click="insertBoldSyntax">粗体</el-button>
-          <el-button @click="insertItalicSyntax">斜体</el-button>
-          <el-button @click="insertUnderlineSyntax">下划线</el-button>
-          <el-button @click="insertStrikethroughSyntax">删除线</el-button>
+          
+          <div class="toolbar-divider"></div>
+          
+          <div class="toolbar-btn" @click="insertBoldSyntax" title="粗体">
+            <span style="font-weight: bold">B</span>
+          </div>
+          <div class="toolbar-btn" @click="insertItalicSyntax" title="斜体">
+            <span style="font-style: italic">I</span>
+          </div>
+          <div class="toolbar-btn" @click="insertUnderlineSyntax" title="下划线">
+            <span style="text-decoration: underline">U</span>
+          </div>
+          <div class="toolbar-btn" @click="insertStrikethroughSyntax" title="删除线">
+            <span style="text-decoration: line-through">S</span>
+          </div>
         </div>
-        <el-button type="primary" :loading="isSaving" @click="saveNote">保存</el-button>
+
+        <div class="toolbar-right">
+          <el-button type="primary" :loading="isSaving" @click="saveNote" size="default">保存</el-button>
+        </div>
       </div>
 
       <div class="note-main">
@@ -218,21 +242,70 @@ const saveNote = async () => {
 
 .note-toolbar {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border-color);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-backdrop-filter);
+  background: var(--bg-color);
 }
-
 
 .toolbar-right {
   display: flex;
-  gap: 10px;
   align-items: center;
+  flex-shrink: 0;
 }
+
+.toolbar-middle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-color-primary);
+  font-size: 14px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.toolbar-btn:hover {
+  background-color: var(--bg-color-secondary);
+  color: var(--primary-color);
+}
+
+.dropdown-trigger {
+  padding: 0 12px;
+}
+
+.toolbar-dropdown {
+  outline: none;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background-color: var(--border-color);
+  margin: 0 6px;
+}
+
+/* 标题下拉菜单样式增强 */
+.h1-item { font-size: 1.5em; font-weight: bold; }
+.h2-item { font-size: 1.3em; font-weight: bold; }
+.h3-item { font-size: 1.1em; font-weight: bold; }
+.h4-item { font-size: 1em; font-weight: bold; }
+.h5-item { font-size: 0.9em; font-weight: bold; }
+.h6-item { font-size: 0.8em; font-weight: bold; }
 
 .title-input {
   flex: 1;
