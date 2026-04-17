@@ -182,6 +182,185 @@ const insertDividerSyntax = async () => {
   await insertIntoEditor(text)
 }
 
+const insertUnorderedListSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+
+  if (selected) {
+    const list = selected
+      .split('\n')
+      .map(line => (line.trim() ? `- ${line}` : '- '))
+      .join('\n')
+    localContent.value = localContent.value.slice(0, start) + list + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start, start + list.length)
+    return
+  }
+
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  await insertIntoEditor(needsNewline ? '\n- ' : '- ')
+}
+
+const insertOrderedListSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+
+  if (selected) {
+    const list = selected
+      .split('\n')
+      .map((line, index) => (line.trim() ? `${index + 1}. ${line}` : `${index + 1}. `))
+      .join('\n')
+    localContent.value = localContent.value.slice(0, start) + list + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start, start + list.length)
+    return
+  }
+
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  await insertIntoEditor(needsNewline ? '\n1. ' : '1. ')
+}
+
+const insertTableSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  const table = '| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 内容1 | 内容2 | 内容3 |\n'
+  await insertIntoEditor(needsNewline ? `\n${table}` : table)
+}
+
+const updateEditorContentAndSelection = async (
+  newContent: string,
+  selectionStart: number,
+  selectionEnd: number = selectionStart
+) => {
+  localContent.value = newContent
+  await nextTick()
+  if (!editorRef.value) return
+  editorRef.value.focus()
+  editorRef.value.setSelectionRange(selectionStart, selectionEnd)
+}
+
+const handleListEnter = async (editor: HTMLTextAreaElement) => {
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const beforeCursor = localContent.value.slice(0, start)
+  const lineStart = beforeCursor.lastIndexOf('\n') + 1
+  const currentLine = localContent.value.slice(lineStart, start)
+
+  const unorderedMatch = currentLine.match(/^(\s*)([-*+])\s+(.*)$/)
+  const orderedMatch = currentLine.match(/^(\s*)(\d+)\.\s+(.*)$/)
+  if (!unorderedMatch && !orderedMatch) return false
+
+  let insertion = '\n'
+  if (unorderedMatch) {
+    insertion += `${unorderedMatch[1]}${unorderedMatch[2]} `
+  } else if (orderedMatch) {
+    insertion += `${orderedMatch[1]}${Number(orderedMatch[2]) + 1}. `
+  }
+
+  const newContent = localContent.value.slice(0, start) + insertion + localContent.value.slice(end)
+  const cursor = start + insertion.length
+  await updateEditorContentAndSelection(newContent, cursor)
+  return true
+}
+
+const handleListIndent = async (editor: HTMLTextAreaElement, unindent: boolean) => {
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const full = localContent.value
+  const lineStart = full.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+  const nextBreak = full.indexOf('\n', end)
+  const lineEnd = nextBreak === -1 ? full.length : nextBreak
+  const selectedBlock = full.slice(lineStart, lineEnd)
+  const lines = selectedBlock.split('\n')
+  const listLineRegex = /^\s*(?:[-*+]\s+|\d+\.\s+)/
+  if (!lines.some(line => listLineRegex.test(line))) return false
+
+  const transformed = lines.map(line => {
+    if (!listLineRegex.test(line)) return line
+    if (unindent) {
+      return line.replace(/^ {1,2}/, '')
+    }
+    return `  ${line}`
+  })
+
+  const replaced = transformed.join('\n')
+  const newContent = full.slice(0, lineStart) + replaced + full.slice(lineEnd)
+  await updateEditorContentAndSelection(newContent, lineStart, lineStart + replaced.length)
+  return true
+}
+
+const handlePlainTabIndent = async (editor: HTMLTextAreaElement, unindent: boolean) => {
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const full = localContent.value
+
+  if (start === end) {
+    if (unindent) {
+      const lineStart = full.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+      const beforeCursor = full.slice(lineStart, start)
+      const removeSize = beforeCursor.endsWith('  ') ? 2 : beforeCursor.endsWith(' ') ? 1 : 0
+      if (removeSize === 0) return
+      const newStart = start - removeSize
+      const newContent = full.slice(0, newStart) + full.slice(start)
+      await updateEditorContentAndSelection(newContent, newStart)
+      return
+    }
+
+    const newContent = full.slice(0, start) + '  ' + full.slice(end)
+    await updateEditorContentAndSelection(newContent, start + 2)
+    return
+  }
+
+  const lineStart = full.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+  const nextBreak = full.indexOf('\n', end)
+  const lineEnd = nextBreak === -1 ? full.length : nextBreak
+  const selectedBlock = full.slice(lineStart, lineEnd)
+  const lines = selectedBlock.split('\n')
+
+  const transformed = lines.map(line => {
+    if (unindent) return line.replace(/^ {1,2}/, '')
+    return `  ${line}`
+  })
+
+  const replaced = transformed.join('\n')
+  const newContent = full.slice(0, lineStart) + replaced + full.slice(lineEnd)
+  await updateEditorContentAndSelection(newContent, lineStart, lineStart + replaced.length)
+}
+
+const handleEditorKeydown = async (event: KeyboardEvent) => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  if (event.key === 'Enter') {
+    const handled = await handleListEnter(editor)
+    if (handled) {
+      event.preventDefault()
+    }
+    return
+  }
+
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    const handled = await handleListIndent(editor, event.shiftKey)
+    if (!handled) {
+      await handlePlainTabIndent(editor, event.shiftKey)
+    }
+  }
+}
+
 const saveNote = async () => {
   if (!noteStore.activeNoteId) return
 
@@ -308,6 +487,15 @@ onUnmounted(() => {
           <div class="toolbar-btn" @click="insertDividerSyntax" title="分割线">
             <span>—</span>
           </div>
+          <div class="toolbar-btn" @click="insertUnorderedListSyntax" title="无序列表">
+            <el-icon><List /></el-icon>
+          </div>
+          <div class="toolbar-btn" @click="insertOrderedListSyntax" title="有序列表">
+            <el-icon><Sort /></el-icon>
+          </div>
+          <div class="toolbar-btn" @click="insertTableSyntax" title="表格">
+            <el-icon><Grid /></el-icon>
+          </div>
         </div>
 
         <div class="toolbar-right">
@@ -322,6 +510,7 @@ onUnmounted(() => {
             ref="editorRef"
             class="editor"
             placeholder="在这里输入 Markdown 内容..."
+            @keydown="handleEditorKeydown"
           />
         </div>
         <div class="resize-handle" @mousedown="startResize" />
@@ -525,9 +714,35 @@ onUnmounted(() => {
       border: 0;
     }
 
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.75rem 0;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--border-color);
+      padding: 0.45rem 0.65rem;
+      text-align: left;
+    }
+
+    th {
+      background-color: var(--bg-color-secondary);
+      font-weight: 600;
+    }
+
     ul, ol {
       padding-left: 2em;
       margin: 0.5rem 0;
+    }
+
+    ul ul,
+    ul ol,
+    ol ul,
+    ol ol {
+      margin-top: 0.25rem;
+      margin-bottom: 0.25rem;
     }
 
     code {
