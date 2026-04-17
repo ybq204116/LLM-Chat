@@ -12,19 +12,17 @@ const md = new MarkdownIt({
   // breaks: false,        
   // xhtmlOut: false,      
   highlight: function (str: string, lang: string): string {
-    const language = lang || ''
+    const language = (lang || '').trim().toLowerCase()
     const isDocument = language === 'document'
+    const languageLabel = isDocument ? 'DOCUMENT' : language
 
-    if (language && hljs.getLanguage(language)) {
+    if (language && !isDocument && hljs.getLanguage(language)) {
       try {
         const highlighted = hljs.highlight(str, {
           language: language,
           ignoreIllegals: true
         }).value
-        // 添加行号和语言标识
-        return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><div class="code-header">
-          <span class="code-lang">${language}</span>
-        </div><code class="${language}">${highlighted}</code></pre>`
+        return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><div class="code-header"><span class="code-lang">${language}</span></div><code class="${language}">${highlighted}</code></pre>`
       } catch (error) {
         // 发生错误时返回转义后的代码
         console.error(error)
@@ -32,10 +30,23 @@ const md = new MarkdownIt({
       }
     }
 
-    // 如果没有语言标识或者是 document 类型（但 hljs 不认识 document）
-    return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><div class="code-header">
-      <span class="code-lang">${isDocument ? 'DOCUMENT' : language}</span>
-    </div><code>${md.utils.escapeHtml(str)}</code></pre>`
+    if (!isDocument) {
+      try {
+        const auto = hljs.highlightAuto(str)
+        const detectedLanguage = auto.language || ''
+        if (detectedLanguage) {
+          return `<pre class="hljs"><div class="code-header"><span class="code-lang">${detectedLanguage}</span></div><code class="${detectedLanguage}">${auto.value}</code></pre>`
+        }
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    if (languageLabel) {
+      return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><div class="code-header"><span class="code-lang">${languageLabel}</span></div><code>${md.utils.escapeHtml(str)}</code></pre>`
+    }
+
+    return `<pre class="hljs ${isDocument ? 'is-document' : ''}"><code>${md.utils.escapeHtml(str)}</code></pre>`
   }
 })
 

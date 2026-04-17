@@ -240,6 +240,62 @@ const insertTableSyntax = async () => {
   await insertIntoEditor(needsNewline ? `\n${table}` : table)
 }
 
+const insertCodeBlockSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+
+  if (selected) {
+    const block = `\`\`\`\n${selected}\n\`\`\``
+    localContent.value = localContent.value.slice(0, start) + block + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start + block.length, start + block.length)
+    return
+  }
+
+  const template = '```\n代码内容\n```'
+  const text = needsNewline ? `\n${template}` : template
+  localContent.value = localContent.value.slice(0, start) + text + localContent.value.slice(end)
+  await nextTick()
+  editor.focus()
+  const placeholderStart = start + (needsNewline ? 5 : 4)
+  const placeholderEnd = placeholderStart + '代码内容'.length
+  editor.setSelectionRange(placeholderStart, placeholderEnd)
+}
+
+const insertHtmlSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+
+  if (selected) {
+    const html = `<div>\n${selected}\n</div>`
+    localContent.value = localContent.value.slice(0, start) + html + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start + html.length, start + html.length)
+    return
+  }
+
+  const template = '<div>\nHTML 内容\n</div>'
+  const text = needsNewline ? `\n${template}` : template
+  localContent.value = localContent.value.slice(0, start) + text + localContent.value.slice(end)
+  await nextTick()
+  editor.focus()
+  const placeholderStart = start + (needsNewline ? 6 : 5)
+  const placeholderEnd = placeholderStart + 'HTML 内容'.length
+  editor.setSelectionRange(placeholderStart, placeholderEnd)
+}
+
 const updateEditorContentAndSelection = async (
   newContent: string,
   selectionStart: number,
@@ -496,6 +552,12 @@ onUnmounted(() => {
           <div class="toolbar-btn" @click="insertTableSyntax" title="表格">
             <el-icon><Grid /></el-icon>
           </div>
+          <div class="toolbar-btn" @click="insertCodeBlockSyntax" title="代码块">
+            <el-icon><Tickets /></el-icon>
+          </div>
+          <div class="toolbar-btn" @click="insertHtmlSyntax" title="HTML">
+            <span>&lt;/&gt;</span>
+          </div>
         </div>
 
         <div class="toolbar-right">
@@ -749,25 +811,31 @@ onUnmounted(() => {
       font-family: var(--code-font-family);
       padding: 0.2em 0.4em;
       margin: 0;
-      font-size: 85%;
+      font-size: 92%;
       background-color: var(--code-bg);
       border-radius: var(--border-radius);
-      color: var(--code-text);
+      color: var(--text-color-primary);
     }
 
     pre {
       padding: 1rem;
       overflow: auto;
-      font-size: 85%;
+      font-size: 14px;
       line-height: 1.45;
-      background-color: var(--code-block-bg);
+      background-color: #f0f0f0;
       border-radius: var(--border-radius);
       margin: 0.5rem 0;
       border: 1px solid var(--border-color);
+      color: var(--text-color-primary);
       
+      .code-header {
+        margin-bottom: 0.4rem;
+      }
+
       code {
         padding: 0;
         background-color: transparent;
+        color: inherit;
       }
     }
   }
