@@ -14,7 +14,12 @@ const md = new MarkdownIt({
   highlight: function (str: string, lang: string): string {
     const language = (lang || '').trim().toLowerCase()
     const isDocument = language === 'document'
+    const isMermaid = language === 'mermaid'
     const languageLabel = isDocument ? 'DOCUMENT' : language
+
+    if (isMermaid) {
+      return `<pre class="hljs mermaid-source"><div class="code-header"><span class="code-lang">mermaid</span></div><code class="language-mermaid">${md.utils.escapeHtml(str)}</code></pre>`
+    }
 
     if (language && !isDocument && hljs.getLanguage(language)) {
       try {

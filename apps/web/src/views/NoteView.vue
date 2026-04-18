@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import mermaid from 'mermaid'
 import SideBar from '../components/SideBar.vue'
 import { useNoteStore } from '../stores/note'
 import { renderMarkdown } from '../utils/markdown'
@@ -15,11 +16,59 @@ const localContent = ref('')
 const isSaving = ref(false)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const noteMainRef = ref<HTMLElement | null>(null)
+const previewBodyRef = ref<HTMLElement | null>(null)
 const editorPaneWidth = ref(50)
 const isResizing = ref(false)
+let hasMermaidInitialized = false
+let mermaidRenderTaskId = 0
 
 const activeNote = computed(() => noteStore.activeNoteContent)
 const renderedContent = computed(() => renderMarkdown(localContent.value))
+
+const ensureMermaidInitialized = () => {
+  if (hasMermaidInitialized) return
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'loose'
+  })
+  hasMermaidInitialized = true
+}
+
+const renderMermaidCharts = async () => {
+  const currentTaskId = ++mermaidRenderTaskId
+  await nextTick()
+  if (currentTaskId !== mermaidRenderTaskId) return
+
+  const previewBody = previewBodyRef.value
+  if (!previewBody) return
+
+  const mermaidBlocks = Array.from(previewBody.querySelectorAll('pre code.language-mermaid'))
+  if (mermaidBlocks.length === 0) return
+
+  ensureMermaidInitialized()
+
+  for (let index = 0; index < mermaidBlocks.length; index++) {
+    if (currentTaskId !== mermaidRenderTaskId) return
+
+    const codeBlock = mermaidBlocks[index]
+    const source = codeBlock.textContent?.trim()
+    const pre = codeBlock.closest('pre')
+    if (!source || !pre) continue
+
+    try {
+      const renderId = `note-mermaid-${Date.now()}-${index}`
+      const { svg } = await mermaid.render(renderId, source)
+      if (currentTaskId !== mermaidRenderTaskId) return
+
+      const chart = document.createElement('div')
+      chart.className = 'mermaid-chart'
+      chart.innerHTML = svg
+      pre.replaceWith(chart)
+    } catch (error) {
+      console.error('Mermaid 渲染失败:', error)
+    }
+  }
+}
 
 const loadNoteFromRoute = async () => {
   const routeNoteId = route.params.noteId as string | undefined
@@ -56,6 +105,14 @@ watch(
   async () => {
     await loadNoteFromRoute()
   }
+)
+
+watch(
+  () => renderedContent.value,
+  () => {
+    void renderMermaidCharts()
+  },
+  { immediate: true, flush: 'post' }
 )
 
 onMounted(async () => {
@@ -129,6 +186,132 @@ const handleTextStyleCommand = async (command: string) => {
       await insertTitleSyntax(level)
     }
   }
+}
+
+type ChartCommand =
+  | 'flowchart'
+  | 'sequenceDiagram'
+  | 'classDiagram'
+  | 'mindmap'
+  | 'erDiagram'
+  | 'stateDiagram'
+  | 'journey'
+  | 'gantt'
+  | 'pie'
+
+const chartTemplates: Record<ChartCommand, string> = {
+  flowchart: `\`\`\`mermaid
+flowchart TD
+    A[开始] --> B{条件判断}
+    B -->|是| C[处理步骤]
+    B -->|否| D[备用步骤]
+    C --> E[结束]
+    D --> E
+\`\`\``,
+  sequenceDiagram: `\`\`\`mermaid
+sequenceDiagram
+    participant U as 用户
+    participant S as 系统
+    U->>S: 发起请求
+    S-->>U: 返回结果
+\`\`\``,
+  classDiagram: `\`\`\`mermaid
+classDiagram
+    class User {
+      +String name
+      +login()
+    }
+    class Note {
+      +String title
+      +save()
+    }
+    User --> Note : 创建
+\`\`\``,
+  mindmap: `\`\`\`mermaid
+mindmap
+  root((笔记体系))
+    目标
+      周目标
+      月目标
+    项目
+      需求整理
+      开发计划
+    学习
+      技术主题
+      复盘总结
+\`\`\``,
+  erDiagram: `\`\`\`mermaid
+erDiagram
+    USER ||--o{ NOTE : creates
+    USER {
+      string id
+      string name
+      string email
+    }
+    NOTE {
+      string id
+      string title
+      text content
+    }
+\`\`\``,
+  stateDiagram: `\`\`\`mermaid
+stateDiagram-v2
+    [*] --> 待处理
+    待处理 --> 进行中: 开始
+    进行中 --> 已完成: 完成
+    进行中 --> 待处理: 回退
+    已完成 --> [*]
+\`\`\``,
+  journey: `\`\`\`mermaid
+journey
+    title 用户完成一条任务的体验
+    section 创建任务
+      打开笔记页: 5: 用户
+      新增任务项: 4: 用户
+    section 执行任务
+      标记进行中: 4: 用户
+      标记完成: 5: 用户
+\`\`\``,
+  gantt: `\`\`\`mermaid
+gantt
+    title 项目计划
+    dateFormat YYYY-MM-DD
+    section 阶段一
+    需求分析 :done, a1, 2026-04-01, 3d
+    原型设计 :active, a2, 2026-04-04, 4d
+    section 阶段二
+    开发实现 :a3, 2026-04-08, 7d
+\`\`\``,
+  pie: `\`\`\`mermaid
+pie title 数据占比
+    "分类 A" : 40
+    "分类 B" : 35
+    "分类 C" : 25
+\`\`\``
+}
+
+const insertChartSyntax = async (command: ChartCommand) => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const template = chartTemplates[command]
+  if (!template) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  const text = needsNewline ? `\n${template}` : template
+
+  localContent.value = localContent.value.slice(0, start) + text + localContent.value.slice(end)
+  await nextTick()
+  editor.focus()
+  editor.setSelectionRange(start + text.length, start + text.length)
+}
+
+const handleChartCommand = async (command: string | number | object) => {
+  if (typeof command !== 'string') return
+  if (!(command in chartTemplates)) return
+  await insertChartSyntax(command as ChartCommand)
 }
 
 const insertBoldSyntax = async () => {
@@ -610,6 +793,25 @@ onUnmounted(() => {
           <div class="toolbar-btn" @click="insertMathSyntax" title="数学公式">
             <span>fx</span>
           </div>
+          <el-dropdown trigger="click" @command="handleChartCommand" class="toolbar-dropdown">
+            <span class="toolbar-btn dropdown-trigger">
+              图表
+              <el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="flowchart">流程图</el-dropdown-item>
+                <el-dropdown-item command="sequenceDiagram">时序图</el-dropdown-item>
+                <el-dropdown-item command="classDiagram">类图</el-dropdown-item>
+                <el-dropdown-item command="mindmap">思维导图</el-dropdown-item>
+                <el-dropdown-item command="erDiagram">ER 图</el-dropdown-item>
+                <el-dropdown-item command="stateDiagram">状态图</el-dropdown-item>
+                <el-dropdown-item command="journey">用户旅程图</el-dropdown-item>
+                <el-dropdown-item command="gantt">甘特图</el-dropdown-item>
+                <el-dropdown-item command="pie">饼图</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <div class="toolbar-btn" @click="insertTableSyntax" title="表格">
             <el-icon><Grid /></el-icon>
           </div>
@@ -638,7 +840,7 @@ onUnmounted(() => {
         </div>
         <div class="resize-handle" @mousedown="startResize" />
         <div class="preview-pane" :style="{ width: `${100 - editorPaneWidth}%` }">
-          <div class="markdown-body" v-html="renderedContent" @click="handlePreviewLinkClick" />
+          <div ref="previewBodyRef" class="markdown-body" v-html="renderedContent" @click="handlePreviewLinkClick" />
         </div>
       </div>
     </div>
@@ -898,6 +1100,17 @@ onUnmounted(() => {
         background-color: transparent;
         color: inherit;
       }
+    }
+
+    .mermaid-chart {
+      margin: 0.75rem 0;
+      overflow: auto;
+    }
+
+    .mermaid-chart svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
     }
   }
 }
