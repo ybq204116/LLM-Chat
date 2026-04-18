@@ -4,6 +4,8 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import mermaid from 'mermaid'
 import JSZip from 'jszip'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import SideBar from '../components/SideBar.vue'
 import { useNoteStore } from '../stores/note'
 import request from '../utils/request'
@@ -788,7 +790,7 @@ const saveNote = async (options: { silent?: boolean } = {}) => {
   }
 }
 
-type DownloadFormat = 'md' | 'txt' | 'html'
+type DownloadFormat = 'md' | 'txt' | 'html' | 'pdf'
 
 const sanitizeFileName = (name: string) => {
   const trimmed = name.trim() || '无标题笔记'
@@ -818,6 +820,62 @@ const triggerBlobDownload = (fileName: string, blob: Blob) => {
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+const exportPreviewAsPdf = async (title: string) => {
+  const previewElement = previewBodyRef.value
+  if (!previewElement) {
+    ElMessage.error('预览区不可用，无法导出 PDF')
+    return
+  }
+
+  const sandbox = document.createElement('div')
+  sandbox.style.position = 'fixed'
+  sandbox.style.left = '-100000px'
+  sandbox.style.top = '0'
+  sandbox.style.width = `${previewElement.clientWidth || 960}px`
+  sandbox.style.padding = '20px'
+  sandbox.style.backgroundColor = '#ffffff'
+  sandbox.style.color = '#222'
+  sandbox.style.boxSizing = 'border-box'
+
+  const clonedPreview = previewElement.cloneNode(true) as HTMLElement
+  sandbox.appendChild(clonedPreview)
+  document.body.appendChild(sandbox)
+
+  try {
+    const canvas = await html2canvas(sandbox, {
+      scale: Math.min(2, window.devicePixelRatio || 2),
+      useCORS: true,
+      backgroundColor: '#ffffff'
+    })
+
+    const imgData = canvas.toDataURL('image/png')
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const imgWidth = pageWidth
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+    let heightLeft = imgHeight
+    let position = 0
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+
+    pdf.save(`${title}.pdf`)
+  } catch (error) {
+    console.error('导出 PDF 失败', error)
+    ElMessage.error('导出 PDF 失败，请稍后重试')
+  } finally {
+    sandbox.remove()
+  }
 }
 
 const formatNoteMarkdown = (title: string, content: string) => {
@@ -864,8 +922,9 @@ const exportAllNotesZip = async () => {
   }
 }
 
-const downloadNote = (format: DownloadFormat) => {
+const downloadNote = async (format: DownloadFormat) => {
   const baseName = sanitizeFileName(localTitle.value)
+  const previewHtml = previewBodyRef.value?.innerHTML?.trim() || renderedContent.value
   if (format === 'md') {
     triggerDownload(`${baseName}.md`, localContent.value, 'text/markdown')
     return
@@ -877,6 +936,11 @@ const downloadNote = (format: DownloadFormat) => {
     return
   }
 
+  if (format === 'pdf') {
+    await exportPreviewAsPdf(baseName)
+    return
+  }
+
   const htmlDoc = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -885,7 +949,7 @@ const downloadNote = (format: DownloadFormat) => {
   <title>${baseName}</title>
 </head>
 <body>
-  ${renderedContent.value}
+  ${previewHtml}
 </body>
 </html>`
   triggerDownload(`${baseName}.html`, htmlDoc, 'text/html')
@@ -893,8 +957,8 @@ const downloadNote = (format: DownloadFormat) => {
 
 const handleDownloadCommand = (command: string | number | object) => {
   if (typeof command !== 'string') return
-  if (command !== 'md' && command !== 'txt' && command !== 'html') return
-  downloadNote(command)
+  if (command !== 'md' && command !== 'txt' && command !== 'html' && command !== 'pdf') return
+  void downloadNote(command)
 }
 
 const normalizeExternalUrl = (href: string): string => {
@@ -1185,6 +1249,7 @@ onUnmounted(() => {
                 <el-dropdown-item command="md">Markdown (.md)</el-dropdown-item>
                 <el-dropdown-item command="txt">文本 (.txt)</el-dropdown-item>
                 <el-dropdown-item command="html">网页 (.html)</el-dropdown-item>
+                <el-dropdown-item command="pdf">PDF (.pdf)</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
