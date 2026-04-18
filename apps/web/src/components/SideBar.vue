@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
-import { Fold, Expand, Plus, Delete, Edit, SwitchButton, Document, Message } from '@element-plus/icons-vue'
+import { Fold, Expand, Plus, Delete, Edit, SwitchButton, Document, Message, Upload } from '@element-plus/icons-vue'
 import { useChatStore } from '../stores/chat'
 import { useNoteStore } from '../stores/note'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
-import { ElMessageBox, ElInput } from 'element-plus'
+import { ElMessageBox, ElInput, ElMessage } from 'element-plus'
 
 const isCollapsed = ref(false)
 
@@ -42,6 +42,51 @@ const createNewNote = async () => {
   const id = await noteStore.createNote()
   if (id) {
     router.push(`/notes/${id}`)
+  }
+}
+
+const mdFileInputRef = ref<HTMLInputElement | null>(null)
+
+const triggerImportMd = (event: Event) => {
+  event.stopPropagation()
+  mdFileInputRef.value?.click()
+}
+
+const parseTitleFromFileName = (fileName: string) => {
+  return fileName.replace(/\.md$/i, '').trim() || '导入笔记'
+}
+
+const handleImportMdChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (!file) return
+
+  try {
+    const isMarkdown = /\.md$/i.test(file.name) || file.type === 'text/markdown'
+    if (!isMarkdown) {
+      ElMessage.warning('请选择 .md 文件')
+      return
+    }
+
+    const content = await file.text()
+    const title = parseTitleFromFileName(file.name)
+    const id = await noteStore.createNote(title)
+    if (!id) {
+      ElMessage.error('导入失败，请稍后重试')
+      return
+    }
+
+    await noteStore.updateNote(id, { title, content })
+    await noteStore.setActiveNote(id)
+    router.push(`/notes/${id}`)
+    ElMessage.success('导入 Markdown 成功')
+  } catch (error) {
+    console.error('导入 Markdown 失败', error)
+    ElMessage.error('导入失败，请稍后重试')
+  } finally {
+    if (input) {
+      input.value = ''
+    }
   }
 }
 
@@ -202,6 +247,17 @@ const handleLogout = async () => {
             <span>笔记</span>
           </div>
           <div class="section-actions">
+            <input
+              ref="mdFileInputRef"
+              type="file"
+              accept=".md,text/markdown"
+              class="hidden-file-input"
+              @change="handleImportMdChange"
+              @click.stop
+            />
+            <el-button link size="small" @click.stop="triggerImportMd" title="导入 Markdown">
+              <el-icon><Upload /></el-icon>
+            </el-button>
             <el-button link size="small" @click.stop="createNewNote">
               <el-icon><Plus /></el-icon>
             </el-button>
@@ -412,6 +468,10 @@ const handleLogout = async () => {
       transform: rotate(90deg);
     }
   }
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .section-list {

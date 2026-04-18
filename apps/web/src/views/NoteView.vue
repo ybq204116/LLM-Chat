@@ -3,8 +3,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import mermaid from 'mermaid'
+import JSZip from 'jszip'
 import SideBar from '../components/SideBar.vue'
 import { useNoteStore } from '../stores/note'
+import request from '../utils/request'
 import { renderMarkdown } from '../utils/markdown'
 
 const route = useRoute()
@@ -14,6 +16,7 @@ const noteStore = useNoteStore()
 const localTitle = ref('')
 const localContent = ref('')
 const isSaving = ref(false)
+const isExportingNotes = ref(false)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const noteMainRef = ref<HTMLElement | null>(null)
 const previewBodyRef = ref<HTMLElement | null>(null)
@@ -670,6 +673,115 @@ const saveNote = async () => {
   }
 }
 
+type DownloadFormat = 'md' | 'txt' | 'html'
+
+const sanitizeFileName = (name: string) => {
+  const trimmed = name.trim() || '无标题笔记'
+  return trimmed
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80)
+}
+
+const htmlToPlainText = (html: string) => {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  return doc.body.textContent || ''
+}
+
+const triggerDownload = (fileName: string, content: string, mimeType: string) => {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` })
+  triggerBlobDownload(fileName, blob)
+}
+
+const triggerBlobDownload = (fileName: string, blob: Blob) => {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+const formatNoteMarkdown = (title: string, content: string) => {
+  if (content.trim()) {
+    return content
+  }
+  return `# ${title}\n`
+}
+
+const exportAllNotesZip = async () => {
+  if (isExportingNotes.value) return
+  isExportingNotes.value = true
+
+  try {
+    const notes = await request.get('/notes') as Array<{ title?: string; content?: string }>
+    if (!notes || notes.length === 0) {
+      ElMessage.warning('暂无可导出的笔记')
+      return
+    }
+
+    const zip = new JSZip()
+    const fileNameCounter = new Map<string, number>()
+
+    for (const note of notes) {
+      const title = (note.title || '无标题笔记').trim()
+      const markdown = formatNoteMarkdown(title, note.content || '')
+      const baseName = sanitizeFileName(title) || '无标题笔记'
+      const currentCount = fileNameCounter.get(baseName) || 0
+      fileNameCounter.set(baseName, currentCount + 1)
+      const suffix = currentCount > 0 ? `_${currentCount + 1}` : ''
+      zip.file(`${baseName}${suffix}.md`, markdown)
+    }
+
+    const now = new Date()
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+    const zipBlob = await zip.generateAsync({ type: 'blob' })
+    triggerBlobDownload(`全部笔记_${stamp}.zip`, zipBlob)
+    ElMessage.success('笔记导出成功')
+  } catch (error) {
+    console.error('导出笔记失败', error)
+    ElMessage.error('导出笔记失败，请稍后重试')
+  } finally {
+    isExportingNotes.value = false
+  }
+}
+
+const downloadNote = (format: DownloadFormat) => {
+  const baseName = sanitizeFileName(localTitle.value)
+  if (format === 'md') {
+    triggerDownload(`${baseName}.md`, localContent.value, 'text/markdown')
+    return
+  }
+
+  if (format === 'txt') {
+    const plainText = htmlToPlainText(renderedContent.value)
+    triggerDownload(`${baseName}.txt`, plainText, 'text/plain')
+    return
+  }
+
+  const htmlDoc = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${baseName}</title>
+</head>
+<body>
+  ${renderedContent.value}
+</body>
+</html>`
+  triggerDownload(`${baseName}.html`, htmlDoc, 'text/html')
+}
+
+const handleDownloadCommand = (command: string | number | object) => {
+  if (typeof command !== 'string') return
+  if (command !== 'md' && command !== 'txt' && command !== 'html') return
+  downloadNote(command)
+}
+
 const normalizeExternalUrl = (href: string): string => {
   const trimmed = href.trim()
   if (!trimmed) return ''
@@ -824,6 +936,19 @@ onUnmounted(() => {
         </div>
 
         <div class="toolbar-right">
+          <el-button :loading="isExportingNotes" size="default" @click="exportAllNotesZip">
+            导出笔记
+          </el-button>
+          <el-dropdown trigger="click" @command="handleDownloadCommand">
+            <el-button size="default">下载</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="md">Markdown (.md)</el-dropdown-item>
+                <el-dropdown-item command="txt">文本 (.txt)</el-dropdown-item>
+                <el-dropdown-item command="html">网页 (.html)</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button type="primary" :loading="isSaving" @click="saveNote" size="default">保存</el-button>
         </div>
       </div>
@@ -877,6 +1002,7 @@ onUnmounted(() => {
 .toolbar-right {
   display: flex;
   align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
