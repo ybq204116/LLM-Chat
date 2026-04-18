@@ -230,6 +230,58 @@ const insertOrderedListSyntax = async () => {
   await insertIntoEditor(needsNewline ? '\n1. ' : '1. ')
 }
 
+const insertTaskListSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+
+  if (selected) {
+    const taskList = selected
+      .split('\n')
+      .map(line => (line.trim() ? `- [ ] ${line}` : '- [ ] '))
+      .join('\n')
+    localContent.value = localContent.value.slice(0, start) + taskList + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start, start + taskList.length)
+    return
+  }
+
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+  await insertIntoEditor(needsNewline ? '\n- [ ] ' : '- [ ] ')
+}
+
+const insertMathSyntax = async () => {
+  const editor = editorRef.value
+  if (!editor) return
+
+  const start = editor.selectionStart ?? localContent.value.length
+  const end = editor.selectionEnd ?? start
+  const selected = localContent.value.slice(start, end)
+  const needsNewline = start > 0 && localContent.value[start - 1] !== '\n'
+
+  if (selected) {
+    const inlineMath = `$${selected}$`
+    localContent.value = localContent.value.slice(0, start) + inlineMath + localContent.value.slice(end)
+    await nextTick()
+    editor.focus()
+    editor.setSelectionRange(start + inlineMath.length, start + inlineMath.length)
+    return
+  }
+
+  const template = '$$\n公式\n$$'
+  const text = needsNewline ? `\n${template}` : template
+  localContent.value = localContent.value.slice(0, start) + text + localContent.value.slice(end)
+  await nextTick()
+  editor.focus()
+  const placeholderStart = start + (needsNewline ? 4 : 3)
+  const placeholderEnd = placeholderStart + '公式'.length
+  editor.setSelectionRange(placeholderStart, placeholderEnd)
+}
+
 const insertTableSyntax = async () => {
   const editor = editorRef.value
   if (!editor) return
@@ -315,12 +367,15 @@ const handleListEnter = async (editor: HTMLTextAreaElement) => {
   const lineStart = beforeCursor.lastIndexOf('\n') + 1
   const currentLine = localContent.value.slice(lineStart, start)
 
+  const taskMatch = currentLine.match(/^(\s*)([-*+])\s+\[( |x|X)\]\s+(.*)$/)
   const unorderedMatch = currentLine.match(/^(\s*)([-*+])\s+(.*)$/)
   const orderedMatch = currentLine.match(/^(\s*)(\d+)\.\s+(.*)$/)
-  if (!unorderedMatch && !orderedMatch) return false
+  if (!taskMatch && !unorderedMatch && !orderedMatch) return false
 
   let insertion = '\n'
-  if (unorderedMatch) {
+  if (taskMatch) {
+    insertion += `${taskMatch[1]}${taskMatch[2]} [ ] `
+  } else if (unorderedMatch) {
     insertion += `${unorderedMatch[1]}${unorderedMatch[2]} `
   } else if (orderedMatch) {
     insertion += `${orderedMatch[1]}${Number(orderedMatch[2]) + 1}. `
@@ -548,6 +603,12 @@ onUnmounted(() => {
           </div>
           <div class="toolbar-btn" @click="insertOrderedListSyntax" title="有序列表">
             <el-icon><Sort /></el-icon>
+          </div>
+          <div class="toolbar-btn" @click="insertTaskListSyntax" title="任务列表">
+            <span>[ ]</span>
+          </div>
+          <div class="toolbar-btn" @click="insertMathSyntax" title="数学公式">
+            <span>fx</span>
           </div>
           <div class="toolbar-btn" @click="insertTableSyntax" title="表格">
             <el-icon><Grid /></el-icon>

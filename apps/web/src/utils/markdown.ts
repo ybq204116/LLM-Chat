@@ -50,6 +50,76 @@ const md = new MarkdownIt({
   }
 })
 
+type MarkdownToken = {
+  attrIndex: (name: string) => number
+  attrPush: (attrData: [string, string]) => void
+  attrs?: [string, string][] | null
+}
+
+const addClassToToken = (token: MarkdownToken, className: string) => {
+  const classIndex = token.attrIndex('class')
+  if (classIndex < 0) {
+    token.attrPush(['class', className])
+    return
+  }
+
+  if (!token.attrs || !token.attrs[classIndex]) return
+  const currentClassName = token.attrs[classIndex][1] || ''
+  if (currentClassName.split(/\s+/).includes(className)) return
+  token.attrs[classIndex][1] = `${currentClassName} ${className}`.trim()
+}
+
+// 任务列表支持：将 - [ ] / - [x] 渲染为复选框
+md.core.ruler.after('inline', 'task_list', state => {
+  const tokens = state.tokens
+
+  for (let i = 2; i < tokens.length; i++) {
+    const inlineToken = tokens[i]
+    const paragraphOpenToken = tokens[i - 1]
+    const listItemOpenToken = tokens[i - 2]
+
+    if (
+      inlineToken.type !== 'inline' ||
+      paragraphOpenToken.type !== 'paragraph_open' ||
+      listItemOpenToken.type !== 'list_item_open'
+    ) {
+      continue
+    }
+
+    const match = inlineToken.content.match(/^\[( |x|X)\]\s+/)
+    if (!match) continue
+
+    const checked = /x/i.test(match[1])
+    const markerLength = match[0].length
+    inlineToken.content = inlineToken.content.slice(markerLength)
+    inlineToken.meta = {
+      ...(inlineToken.meta || {}),
+      isTaskListItem: true,
+      isTaskChecked: checked
+    }
+
+    if (inlineToken.children && inlineToken.children.length > 0) {
+      const firstChild = inlineToken.children[0]
+      if (firstChild.type === 'text') {
+        firstChild.content = firstChild.content.slice(markerLength)
+      }
+
+      const checkboxToken = new state.Token('html_inline', '', 0)
+      checkboxToken.content = `<input class="task-list-item-checkbox" type="checkbox"${checked ? ' checked' : ''} disabled> `
+      inlineToken.children.unshift(checkboxToken)
+    }
+
+    addClassToToken(listItemOpenToken, 'task-list-item')
+    for (let j = i - 3; j >= 0; j--) {
+      const parentListToken = tokens[j]
+      if (parentListToken.type === 'bullet_list_open' || parentListToken.type === 'ordered_list_open') {
+        addClassToToken(parentListToken, 'task-list')
+        break
+      }
+    }
+  }
+})
+
 // 添加 LaTeX 支持
 const renderLatex = (tex: string, displayMode: boolean): string => {
   try {
