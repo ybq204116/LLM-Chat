@@ -28,6 +28,9 @@ let mermaidRenderTaskId = 0
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 const lastSavedTitle = ref('无标题笔记')
 const lastSavedContent = ref('')
+const showEditorContextMenu = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const isSyncScrollEnabled = ref(false)
 
 const activeNote = computed(() => noteStore.activeNoteContent)
 const renderedContent = computed(() => renderMarkdown(localContent.value))
@@ -36,6 +39,15 @@ const hasUnsavedChanges = computed(() => {
   return normalizedTitle.value !== lastSavedTitle.value || localContent.value !== lastSavedContent.value
 })
 const syncedNoteId = ref<string | null>(null)
+
+type EditorContextAction = 'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula' | 'toggle-sync-scroll'
+const editorContextMenuItems = computed(() => [
+  { key: 'ai-writing' as EditorContextAction, icon: '🤖', label: 'AI 智能写作' },
+  { key: 'insert-chart' as EditorContextAction, icon: '📊', label: '插入图表' },
+  { key: 'insert-image' as EditorContextAction, icon: '🖼️', label: '插入图片' },
+  { key: 'insert-formula' as EditorContextAction, icon: '∑', label: '插入公式' },
+  { key: 'toggle-sync-scroll' as EditorContextAction, icon: '↕', label: isSyncScrollEnabled.value ? '关闭同步滚动' : '开启同步滚动' }
+])
 
 const ensureMermaidInitialized = () => {
   if (hasMermaidInitialized) return
@@ -909,6 +921,49 @@ const startResize = (event: MouseEvent) => {
   window.addEventListener('mouseup', stopResize)
 }
 
+const closeEditorContextMenu = () => {
+  showEditorContextMenu.value = false
+}
+
+const handleEditorContextMenu = (event: MouseEvent) => {
+  event.preventDefault()
+  contextMenuPosition.value = {
+    x: event.clientX,
+    y: event.clientY
+  }
+  showEditorContextMenu.value = true
+}
+
+const handleEditorContextAction = (action: EditorContextAction) => {
+  if (action === 'toggle-sync-scroll') {
+    isSyncScrollEnabled.value = !isSyncScrollEnabled.value
+    ElMessage.info(`同步滚动${isSyncScrollEnabled.value ? '已开启' : '已关闭'}（功能待实现）`)
+    closeEditorContextMenu()
+    return
+  }
+
+  const actionLabelMap: Record<Exclude<EditorContextAction, 'toggle-sync-scroll'>, string> = {
+    'ai-writing': 'AI 智能写作',
+    'insert-chart': '插入图表',
+    'insert-image': '插入图片',
+    'insert-formula': '插入公式'
+  }
+  ElMessage.info(`${actionLabelMap[action as Exclude<EditorContextAction, 'toggle-sync-scroll'>]}功能待实现`)
+  closeEditorContextMenu()
+}
+
+const handleGlobalClickForContextMenu = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('.editor-context-menu')) return
+  closeEditorContextMenu()
+}
+
+const handleGlobalKeydownForContextMenu = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeEditorContextMenu()
+  }
+}
+
 const handleBeforeUnload = (event: BeforeUnloadEvent) => {
   if (!hasUnsavedChanges.value) return
   event.preventDefault()
@@ -927,6 +982,8 @@ onBeforeRouteLeave((_to, _from, next) => {
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('click', handleGlobalClickForContextMenu)
+  window.addEventListener('keydown', handleGlobalKeydownForContextMenu)
 })
 
 onUnmounted(() => {
@@ -935,6 +992,8 @@ onUnmounted(() => {
     autoSaveTimer = null
   }
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('click', handleGlobalClickForContextMenu)
+  window.removeEventListener('keydown', handleGlobalKeydownForContextMenu)
   stopResize()
 })
 </script>
@@ -1058,12 +1117,28 @@ onUnmounted(() => {
             class="editor"
             placeholder="在这里输入 Markdown 内容..."
             @keydown="handleEditorKeydown"
+            @contextmenu="handleEditorContextMenu"
           />
         </div>
         <div class="resize-handle" @mousedown="startResize" />
         <div class="preview-pane" :style="{ width: `${100 - editorPaneWidth}%` }">
           <div ref="previewBodyRef" class="markdown-body" v-html="renderedContent" @click="handlePreviewLinkClick" />
         </div>
+      </div>
+    </div>
+    <div
+      v-show="showEditorContextMenu"
+      class="editor-context-menu"
+      :style="{ left: `${contextMenuPosition.x}px`, top: `${contextMenuPosition.y}px` }"
+    >
+      <div
+        v-for="item in editorContextMenuItems"
+        :key="item.key"
+        class="context-menu-item"
+        @click.stop="handleEditorContextAction(item.key)"
+      >
+        <span class="context-menu-icon">{{ item.icon }}</span>
+        {{ item.label }}
       </div>
     </div>
   </div>
@@ -1336,5 +1411,39 @@ onUnmounted(() => {
       height: auto;
     }
   }
+}
+
+.editor-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text-color-primary);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.context-menu-icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.context-menu-item:hover {
+  background-color: var(--bg-color-secondary);
+  color: var(--primary-color);
 }
 </style>
