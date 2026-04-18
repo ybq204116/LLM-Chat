@@ -40,13 +40,42 @@ const hasUnsavedChanges = computed(() => {
 })
 const syncedNoteId = ref<string | null>(null)
 
-type EditorContextAction = 'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula' | 'toggle-sync-scroll'
-const editorContextMenuItems = computed(() => [
-  { key: 'ai-writing' as EditorContextAction, icon: '🤖', label: 'AI 智能写作' },
-  { key: 'insert-chart' as EditorContextAction, icon: '📊', label: '插入图表' },
-  { key: 'insert-image' as EditorContextAction, icon: '🖼️', label: '插入图片' },
-  { key: 'insert-formula' as EditorContextAction, icon: '∑', label: '插入公式' },
-  { key: 'toggle-sync-scroll' as EditorContextAction, icon: '↕', label: isSyncScrollEnabled.value ? '关闭同步滚动' : '开启同步滚动' }
+type EditorContextChartAction =
+  | 'chart-flowchart'
+  | 'chart-sequenceDiagram'
+  | 'chart-classDiagram'
+  | 'chart-mindmap'
+  | 'chart-erDiagram'
+  | 'chart-stateDiagram'
+  | 'chart-journey'
+  | 'chart-gantt'
+  | 'chart-pie'
+type EditorContextAction = 'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula' | 'toggle-sync-scroll' | EditorContextChartAction
+type EditorContextMenuItem = {
+  key: EditorContextAction
+  icon: string
+  label: string
+  children?: Array<{ key: EditorContextAction; icon: string; label: string }>
+}
+
+const chartContextChildren: Array<{ key: EditorContextChartAction; icon: string; label: string }> = [
+  { key: 'chart-flowchart', icon: '🔀', label: '流程图' },
+  { key: 'chart-sequenceDiagram', icon: '�', label: '时序图' },
+  { key: 'chart-classDiagram', icon: '🏷', label: '类图' },
+  { key: 'chart-mindmap', icon: '🧠', label: '思维导图' },
+  { key: 'chart-erDiagram', icon: '🗂', label: 'ER 图' },
+  { key: 'chart-stateDiagram', icon: '🔁', label: '状态图' },
+  { key: 'chart-journey', icon: '�', label: '用户旅程图' },
+  { key: 'chart-gantt', icon: '📅', label: '甘特图' },
+  { key: 'chart-pie', icon: '🥧', label: '饼图' }
+]
+
+const editorContextMenuItems = computed<EditorContextMenuItem[]>(() => [
+  { key: 'ai-writing', icon: '🤖', label: 'AI 智能写作' },
+  { key: 'insert-chart', icon: '📊', label: '插入图表', children: chartContextChildren },
+  { key: 'insert-image', icon: '🖼️', label: '插入图片' },
+  { key: 'insert-formula', icon: '∑', label: '插入公式' },
+  { key: 'toggle-sync-scroll', icon: '↕', label: isSyncScrollEnabled.value ? '关闭同步滚动' : '开启同步滚动' }
 ])
 
 const ensureMermaidInitialized = () => {
@@ -934,7 +963,29 @@ const handleEditorContextMenu = (event: MouseEvent) => {
   showEditorContextMenu.value = true
 }
 
-const handleEditorContextAction = (action: EditorContextAction) => {
+const chartActionMap: Record<EditorContextChartAction, string> = {
+  'chart-flowchart': 'flowchart',
+  'chart-sequenceDiagram': 'sequenceDiagram',
+  'chart-classDiagram': 'classDiagram',
+  'chart-mindmap': 'mindmap',
+  'chart-erDiagram': 'erDiagram',
+  'chart-stateDiagram': 'stateDiagram',
+  'chart-journey': 'journey',
+  'chart-gantt': 'gantt',
+  'chart-pie': 'pie'
+}
+
+const isChartContextAction = (action: EditorContextAction): action is EditorContextChartAction => {
+  return action in chartActionMap
+}
+
+const handleEditorContextAction = async (action: EditorContextAction) => {
+  if (isChartContextAction(action)) {
+    await insertChartSyntax(chartActionMap[action] as ChartCommand)
+    closeEditorContextMenu()
+    return
+  }
+
   if (action === 'toggle-sync-scroll') {
     isSyncScrollEnabled.value = !isSyncScrollEnabled.value
     ElMessage.info(`同步滚动${isSyncScrollEnabled.value ? '已开启' : '已关闭'}（功能待实现）`)
@@ -942,13 +993,19 @@ const handleEditorContextAction = (action: EditorContextAction) => {
     return
   }
 
-  const actionLabelMap: Record<Exclude<EditorContextAction, 'toggle-sync-scroll'>, string> = {
+  if (action === 'insert-formula') {
+    await insertMathSyntax()
+    closeEditorContextMenu()
+    return
+  }
+
+  const actionLabelMap: Record<'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula', string> = {
     'ai-writing': 'AI 智能写作',
     'insert-chart': '插入图表',
     'insert-image': '插入图片',
     'insert-formula': '插入公式'
   }
-  ElMessage.info(`${actionLabelMap[action as Exclude<EditorContextAction, 'toggle-sync-scroll'>]}功能待实现`)
+  ElMessage.info(`${actionLabelMap[action as 'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula']}功能待实现`)
   closeEditorContextMenu()
 }
 
@@ -1135,10 +1192,23 @@ onUnmounted(() => {
         v-for="item in editorContextMenuItems"
         :key="item.key"
         class="context-menu-item"
-        @click.stop="handleEditorContextAction(item.key)"
+        :class="{ 'has-children': !!item.children?.length }"
+        @click.stop="item.children?.length ? null : handleEditorContextAction(item.key)"
       >
         <span class="context-menu-icon">{{ item.icon }}</span>
         {{ item.label }}
+        <span v-if="item.children?.length" class="context-menu-arrow">›</span>
+        <div v-if="item.children?.length" class="context-submenu">
+          <div
+            v-for="child in item.children"
+            :key="child.key"
+            class="context-submenu-item"
+            @click.stop="handleEditorContextAction(child.key)"
+          >
+            <span class="context-menu-icon">{{ child.icon }}</span>
+            {{ child.label }}
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1425,6 +1495,7 @@ onUnmounted(() => {
 }
 
 .context-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1436,13 +1507,57 @@ onUnmounted(() => {
   user-select: none;
 }
 
+.context-menu-item.has-children {
+  padding-right: 22px;
+}
+
 .context-menu-icon {
   width: 16px;
   text-align: center;
   flex-shrink: 0;
 }
 
+.context-menu-arrow {
+  margin-left: auto;
+  color: var(--text-color-secondary);
+  font-size: 14px;
+}
+
 .context-menu-item:hover {
+  background-color: var(--bg-color-secondary);
+  color: var(--primary-color);
+}
+
+.context-submenu {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.context-menu-item.has-children:hover .context-submenu {
+  display: block;
+}
+
+.context-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text-color-primary);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.context-submenu-item:hover {
   background-color: var(--bg-color-secondary);
   color: var(--primary-color);
 }
