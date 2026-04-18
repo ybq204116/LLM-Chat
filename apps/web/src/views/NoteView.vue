@@ -20,12 +20,14 @@ const isExportingNotes = ref(false)
 const isAutoSaving = ref(false)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const noteMainRef = ref<HTMLElement | null>(null)
+const previewPaneRef = ref<HTMLElement | null>(null)
 const previewBodyRef = ref<HTMLElement | null>(null)
 const editorPaneWidth = ref(50)
 const isResizing = ref(false)
 let hasMermaidInitialized = false
 let mermaidRenderTaskId = 0
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let isSyncingScroll = false
 const lastSavedTitle = ref('无标题笔记')
 const lastSavedContent = ref('')
 const showEditorContextMenu = ref(false)
@@ -950,6 +952,27 @@ const startResize = (event: MouseEvent) => {
   window.addEventListener('mouseup', stopResize)
 }
 
+const syncScroll = (from: HTMLElement, to: HTMLElement) => {
+  const fromScrollableHeight = from.scrollHeight - from.clientHeight
+  const toScrollableHeight = to.scrollHeight - to.clientHeight
+  if (fromScrollableHeight <= 0 || toScrollableHeight <= 0) return
+
+  const ratio = from.scrollTop / fromScrollableHeight
+  isSyncingScroll = true
+  to.scrollTop = ratio * toScrollableHeight
+  requestAnimationFrame(() => {
+    isSyncingScroll = false
+  })
+}
+
+const handleEditorScroll = () => {
+  if (!isSyncScrollEnabled.value || isSyncingScroll) return
+  const editor = editorRef.value
+  const previewPane = previewPaneRef.value
+  if (!editor || !previewPane) return
+  syncScroll(editor, previewPane)
+}
+
 const closeEditorContextMenu = () => {
   showEditorContextMenu.value = false
 }
@@ -988,7 +1011,10 @@ const handleEditorContextAction = async (action: EditorContextAction) => {
 
   if (action === 'toggle-sync-scroll') {
     isSyncScrollEnabled.value = !isSyncScrollEnabled.value
-    ElMessage.info(`同步滚动${isSyncScrollEnabled.value ? '已开启' : '已关闭'}（功能待实现）`)
+    if (isSyncScrollEnabled.value) {
+      handleEditorScroll()
+    }
+    ElMessage.info(`同步滚动${isSyncScrollEnabled.value ? '已开启' : '已关闭'}`)
     closeEditorContextMenu()
     return
   }
@@ -1174,11 +1200,12 @@ onUnmounted(() => {
             class="editor"
             placeholder="在这里输入 Markdown 内容..."
             @keydown="handleEditorKeydown"
+            @scroll="handleEditorScroll"
             @contextmenu="handleEditorContextMenu"
           />
         </div>
         <div class="resize-handle" @mousedown="startResize" />
-        <div class="preview-pane" :style="{ width: `${100 - editorPaneWidth}%` }">
+        <div ref="previewPaneRef" class="preview-pane" :style="{ width: `${100 - editorPaneWidth}%` }">
           <div ref="previewBodyRef" class="markdown-body" v-html="renderedContent" @click="handlePreviewLinkClick" />
         </div>
       </div>
