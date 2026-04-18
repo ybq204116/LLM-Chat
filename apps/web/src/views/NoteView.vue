@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import mermaid from 'mermaid'
 import JSZip from 'jszip'
@@ -17,6 +17,7 @@ const localTitle = ref('')
 const localContent = ref('')
 const isSaving = ref(false)
 const isExportingNotes = ref(false)
+const isAutoSaving = ref(false)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
 const noteMainRef = ref<HTMLElement | null>(null)
 const previewBodyRef = ref<HTMLElement | null>(null)
@@ -24,9 +25,17 @@ const editorPaneWidth = ref(50)
 const isResizing = ref(false)
 let hasMermaidInitialized = false
 let mermaidRenderTaskId = 0
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+const lastSavedTitle = ref('无标题笔记')
+const lastSavedContent = ref('')
 
 const activeNote = computed(() => noteStore.activeNoteContent)
 const renderedContent = computed(() => renderMarkdown(localContent.value))
+const normalizedTitle = computed(() => localTitle.value.trim() || '无标题笔记')
+const hasUnsavedChanges = computed(() => {
+  return normalizedTitle.value !== lastSavedTitle.value || localContent.value !== lastSavedContent.value
+})
+const syncedNoteId = ref<string | null>(null)
 
 const ensureMermaidInitialized = () => {
   if (hasMermaidInitialized) return
@@ -97,8 +106,32 @@ const loadNoteFromRoute = async () => {
 watch(
   () => activeNote.value,
   (note) => {
-    localTitle.value = note?.title ?? ''
-    localContent.value = note?.content ?? ''
+    if (!note) {
+      localTitle.value = ''
+      localContent.value = ''
+      lastSavedTitle.value = '无标题笔记'
+      lastSavedContent.value = ''
+      syncedNoteId.value = null
+      return
+    }
+
+    const noteId = note._id
+    const title = note?.title ?? ''
+    const content = note?.content ?? ''
+    const normalizedIncomingTitle = title.trim() || '无标题笔记'
+
+    // 同一笔记保存回写时仅更新“已保存快照”，避免重置输入框导致光标抖动
+    if (syncedNoteId.value === noteId) {
+      lastSavedTitle.value = normalizedIncomingTitle
+      lastSavedContent.value = content
+      return
+    }
+
+    syncedNoteId.value = noteId
+    localTitle.value = title
+    localContent.value = content
+    lastSavedTitle.value = normalizedIncomingTitle
+    lastSavedContent.value = content
   },
   { immediate: true }
 )
@@ -120,6 +153,18 @@ watch(
 
 onMounted(async () => {
   await loadNoteFromRoute()
+})
+
+watch([localTitle, localContent], () => {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+
+  if (!noteStore.activeNoteId || !hasUnsavedChanges.value) return
+  autoSaveTimer = setTimeout(() => {
+    void saveNote({ silent: true })
+  }, 1000)
 })
 
 const insertIntoEditor = async (text: string) => {
@@ -658,18 +703,45 @@ const handleEditorKeydown = async (event: KeyboardEvent) => {
   }
 }
 
-const saveNote = async () => {
+const saveNote = async (options: { silent?: boolean } = {}) => {
+  const { silent = false } = options
   if (!noteStore.activeNoteId) return
+  if (!hasUnsavedChanges.value) return
+  if (isSaving.value || isAutoSaving.value) return
 
-  isSaving.value = true
+  if (silent) {
+    isAutoSaving.value = true
+  } else {
+    isSaving.value = true
+  }
   try {
-    await noteStore.updateNote(noteStore.activeNoteId, {
-      title: localTitle.value.trim() || '无标题笔记',
+    const result = await noteStore.updateNote(noteStore.activeNoteId, {
+      title: normalizedTitle.value,
       content: localContent.value
     })
-    ElMessage.success('笔记已保存')
+    if (result) {
+      lastSavedTitle.value = normalizedTitle.value
+      lastSavedContent.value = localContent.value
+      if (!silent) {
+        ElMessage.success('笔记已保存')
+      }
+      return
+    }
+
+    if (!silent) {
+      ElMessage.error('保存失败，请稍后重试')
+    }
+  } catch (error) {
+    console.error('保存笔记失败', error)
+    if (!silent) {
+      ElMessage.error('保存失败，请稍后重试')
+    }
   } finally {
-    isSaving.value = false
+    if (silent) {
+      isAutoSaving.value = false
+    } else {
+      isSaving.value = false
+    }
   }
 }
 
@@ -837,7 +909,32 @@ const startResize = (event: MouseEvent) => {
   window.addEventListener('mouseup', stopResize)
 }
 
+const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave((_to, _from, next) => {
+  if (!hasUnsavedChanges.value) {
+    next()
+    return
+  }
+
+  const confirmed = window.confirm('当前笔记有未保存内容，确定离开吗？')
+  next(confirmed)
+})
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
 onUnmounted(() => {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+  window.removeEventListener('beforeunload', handleBeforeUnload)
   stopResize()
 })
 </script>
