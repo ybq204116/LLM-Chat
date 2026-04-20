@@ -5,7 +5,8 @@ import {
     createNote,
     updateNote,
     deleteNote,
-    togglePinNote
+    togglePinNote,
+    createNoteImageUploadToken
 } from '../controllers/noteController';
 import { authenticateToken } from '../middleware/auth';
 
@@ -14,6 +15,7 @@ const router = Router();
 router.use(authenticateToken);
 
 router.get('/', getNotes);
+router.post('/files/upload-token', createNoteImageUploadToken);
 router.get('/:noteId', getNote);
 router.post('/', createNote);
 router.patch('/:noteId', updateNote);

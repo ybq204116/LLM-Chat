@@ -21,6 +21,7 @@ const isSaving = ref(false)
 const isExportingNotes = ref(false)
 const isAutoSaving = ref(false)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
+const imageUploadInputRef = ref<HTMLInputElement | null>(null)
 const noteMainRef = ref<HTMLElement | null>(null)
 const previewPaneRef = ref<HTMLElement | null>(null)
 const previewBodyRef = ref<HTMLElement | null>(null)
@@ -35,6 +36,14 @@ const lastSavedContent = ref('')
 const showEditorContextMenu = ref(false)
 const contextMenuPosition = ref({ x: 0, y: 0 })
 const isSyncScrollEnabled = ref(false)
+const isUploadingImage = ref(false)
+
+interface NoteImageUploadTokenResponse {
+  uploadToken: string
+  uploadHost: string
+  key: string
+  url: string
+}
 
 const activeNote = computed(() => noteStore.activeNoteContent)
 const renderedContent = computed(() => renderMarkdown(localContent.value))
@@ -624,6 +633,90 @@ const insertHtmlSyntax = async () => {
   editor.setSelectionRange(placeholderStart, placeholderEnd)
 }
 
+const triggerImageUpload = () => {
+  closeEditorContextMenu()
+  imageUploadInputRef.value?.click()
+}
+
+const sanitizeAltText = (fileName: string): string => {
+  const baseName = fileName.replace(/\.[^.]+$/, '')
+  return (baseName || '图片')
+    .replaceAll('[', '')
+    .replaceAll(']', '')
+    .replaceAll('(', '')
+    .replaceAll(')', '')
+}
+
+const getUploadErrorMessage = (error: unknown): string => {
+  const err = error as {
+    response?: { data?: { message?: string } }
+    message?: string
+  }
+
+  if (err?.response?.data?.message) {
+    return err.response.data.message
+  }
+  if (err?.message) {
+    return err.message
+  }
+  return '图片上传失败，请稍后重试'
+}
+
+const uploadImageAndInsert = async (file: File) => {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('请选择图片文件')
+    return
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('图片大小不能超过 10MB')
+    return
+  }
+
+  isUploadingImage.value = true
+  try {
+    const tokenRes = await request.post('/notes/files/upload-token', {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size
+    }) as NoteImageUploadTokenResponse
+
+    const formData = new FormData()
+    formData.append('token', tokenRes.uploadToken)
+    formData.append('key', tokenRes.key)
+    formData.append('file', file)
+
+    const uploadResponse = await fetch(tokenRes.uploadHost, {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text()
+      throw new Error(errorText || `上传失败: ${uploadResponse.status}`)
+    }
+
+    const altText = sanitizeAltText(file.name)
+    await insertIntoEditor(`![${altText}](${tokenRes.url})`)
+    ElMessage.success('图片插入成功')
+  } catch (error) {
+    console.error('图片上传失败', error)
+    ElMessage.error(getUploadErrorMessage(error))
+  } finally {
+    isUploadingImage.value = false
+    if (imageUploadInputRef.value) {
+      imageUploadInputRef.value.value = ''
+    }
+  }
+}
+
+const handleImageUploadChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (!file) return
+  await uploadImageAndInsert(file)
+}
+
 const updateEditorContentAndSelection = async (
   newContent: string,
   selectionStart: number,
@@ -1089,6 +1182,11 @@ const handleEditorContextAction = async (action: EditorContextAction) => {
     return
   }
 
+  if (action === 'insert-image') {
+    triggerImageUpload()
+    return
+  }
+
   const actionLabelMap: Record<'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula', string> = {
     'ai-writing': 'AI 智能写作',
     'insert-chart': '插入图表',
@@ -1147,6 +1245,14 @@ onUnmounted(() => {
 
 <template>
   <div class="app-container">
+    <input
+      ref="imageUploadInputRef"
+      type="file"
+      accept="image/png,image/jpeg,image/webp,image/gif"
+      class="hidden-file-input"
+      :disabled="isUploadingImage"
+      @change="handleImageUploadChange"
+    />
     <SideBar />
 
     <div class="note-container">
@@ -1313,6 +1419,10 @@ onUnmounted(() => {
   height: 100vh;
   overflow: hidden;
   background-color: var(--bg-color-secondary);
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .note-container {
