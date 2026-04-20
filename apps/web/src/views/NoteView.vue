@@ -37,6 +37,7 @@ const showEditorContextMenu = ref(false)
 const contextMenuPosition = ref({ x: 0, y: 0 })
 const isSyncScrollEnabled = ref(false)
 const isUploadingImage = ref(false)
+const isDragOverEditor = ref(false)
 
 interface NoteImageUploadTokenResponse {
   uploadToken: string
@@ -717,6 +718,49 @@ const handleImageUploadChange = async (event: Event) => {
   await uploadImageAndInsert(file)
 }
 
+const getImageFiles = (files: FileList | null | undefined): File[] => {
+  if (!files || files.length === 0) return []
+  return Array.from(files).filter(file => file.type.startsWith('image/'))
+}
+
+const handleEditorImageFiles = async (files: File[]) => {
+  if (files.length === 0) return
+  if (isUploadingImage.value) {
+    ElMessage.info('图片上传中，请稍候')
+    return
+  }
+
+  for (const file of files) {
+    await uploadImageAndInsert(file)
+  }
+}
+
+const handleEditorDragOver = (event: DragEvent) => {
+  const imageFiles = getImageFiles(event.dataTransfer?.files)
+  if (imageFiles.length === 0) return
+  event.preventDefault()
+  isDragOverEditor.value = true
+}
+
+const handleEditorDragLeave = () => {
+  isDragOverEditor.value = false
+}
+
+const handleEditorDrop = async (event: DragEvent) => {
+  const imageFiles = getImageFiles(event.dataTransfer?.files)
+  isDragOverEditor.value = false
+  if (imageFiles.length === 0) return
+  event.preventDefault()
+  await handleEditorImageFiles(imageFiles)
+}
+
+const handleEditorPaste = async (event: ClipboardEvent) => {
+  const imageFiles = getImageFiles(event.clipboardData?.files)
+  if (imageFiles.length === 0) return
+  event.preventDefault()
+  await handleEditorImageFiles(imageFiles)
+}
+
 const updateEditorContentAndSelection = async (
   newContent: string,
   selectionStart: number,
@@ -1369,10 +1413,15 @@ onUnmounted(() => {
             v-model="localContent"
             ref="editorRef"
             class="editor"
+            :class="{ 'editor-drag-over': isDragOverEditor }"
             placeholder="在这里输入 Markdown 内容..."
             @keydown="handleEditorKeydown"
             @scroll="handleEditorScroll"
             @contextmenu="handleEditorContextMenu"
+            @dragover="handleEditorDragOver"
+            @dragleave="handleEditorDragLeave"
+            @drop="handleEditorDrop"
+            @paste="handleEditorPaste"
           />
         </div>
         <div class="resize-handle" @mousedown="startResize" />
@@ -1553,6 +1602,12 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.7;
   font-family: Consolas, "Courier New", monospace;
+}
+
+.editor-drag-over {
+  background-color: rgba(64, 158, 255, 0.08);
+  outline: 2px dashed var(--primary-color);
+  outline-offset: -8px;
 }
 
 .preview-pane {
