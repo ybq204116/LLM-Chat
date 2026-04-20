@@ -10,6 +10,8 @@ import SideBar from '../components/SideBar.vue'
 import { useNoteStore } from '../stores/note'
 import request from '../utils/request'
 import { renderMarkdown } from '../utils/markdown'
+import { sendMessageStream } from '../utils/api'
+import type { IMessage } from '@llm-chat/shared'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,6 +40,9 @@ const contextMenuPosition = ref({ x: 0, y: 0 })
 const isSyncScrollEnabled = ref(false)
 const isUploadingImage = ref(false)
 const isDragOverEditor = ref(false)
+const isAiWriting = ref(false)
+const aiAbortController = ref<AbortController | null>(null)
+const NOTE_AI_MODEL = 'deepseek-ai/DeepSeek-V3'
 
 interface NoteImageUploadTokenResponse {
   uploadToken: string
@@ -64,7 +69,15 @@ type EditorContextChartAction =
   | 'chart-journey'
   | 'chart-gantt'
   | 'chart-pie'
-type EditorContextAction = 'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula' | 'toggle-sync-scroll' | EditorContextChartAction
+type EditorContextAiAction = 'ai-optimize' | 'ai-continue' | 'ai-explain'
+type EditorContextAction =
+  | 'ai-writing'
+  | 'insert-chart'
+  | 'insert-image'
+  | 'insert-formula'
+  | 'toggle-sync-scroll'
+  | EditorContextChartAction
+  | EditorContextAiAction
 type EditorContextMenuItem = {
   key: EditorContextAction
   icon: string
@@ -84,8 +97,14 @@ const chartContextChildren: Array<{ key: EditorContextChartAction; icon: string;
   { key: 'chart-pie', icon: '🥧', label: '饼图' }
 ]
 
+const aiContextChildren: Array<{ key: EditorContextAiAction; icon: string; label: string }> = [
+  { key: 'ai-optimize', icon: '✨', label: '内容优化' },
+  { key: 'ai-continue', icon: '✍', label: '文本续写' },
+  { key: 'ai-explain', icon: '💡', label: '段落解释' }
+]
+
 const editorContextMenuItems = computed<EditorContextMenuItem[]>(() => [
-  { key: 'ai-writing', icon: '🤖', label: 'AI 智能写作' },
+  { key: 'ai-writing', icon: '🤖', label: 'AI 智能写作', children: aiContextChildren },
   { key: 'insert-chart', icon: '📊', label: '插入图表', children: chartContextChildren },
   { key: 'insert-image', icon: '🖼️', label: '插入图片' },
   { key: 'insert-formula', icon: '∑', label: '插入公式' },
@@ -1203,10 +1222,197 @@ const isChartContextAction = (action: EditorContextAction): action is EditorCont
   return action in chartActionMap
 }
 
+const aiActionLabelMap: Record<EditorContextAiAction, string> = {
+  'ai-optimize': '内容优化',
+  'ai-continue': '文本续写',
+  'ai-explain': '段落解释'
+}
+
+const isAiContextAction = (action: EditorContextAction): action is EditorContextAiAction => {
+  return action in aiActionLabelMap
+}
+
+const isContextActionDisabled = (action: EditorContextAction): boolean => {
+  if (!isAiWriting.value) return false
+  return action === 'ai-writing' || isAiContextAction(action)
+}
+
+type TextRange = {
+  start: number
+  end: number
+}
+
+const getCurrentParagraphRange = (content: string, cursor: number): TextRange => {
+  const text = content || ''
+  const clampedCursor = Math.max(0, Math.min(cursor, text.length))
+  const separatorRegex = /\n\s*\n/g
+  let start = 0
+  let end = text.length
+  let match: RegExpExecArray | null = null
+
+  while ((match = separatorRegex.exec(text)) !== null) {
+    const sepStart = match.index
+    const sepEnd = sepStart + match[0].length
+    if (sepEnd <= clampedCursor) {
+      start = sepEnd
+      continue
+    }
+    end = sepStart
+    break
+  }
+
+  while (start < end && /\s/.test(text[start])) start += 1
+  while (end > start && /\s/.test(text[end - 1])) end -= 1
+
+  return { start, end }
+}
+
+const getAiTargetRange = (): TextRange | null => {
+  const editor = editorRef.value
+  if (!editor) return null
+
+  const selectionStart = editor.selectionStart ?? 0
+  const selectionEnd = editor.selectionEnd ?? selectionStart
+  if (selectionStart !== selectionEnd) {
+    return { start: selectionStart, end: selectionEnd }
+  }
+
+  return getCurrentParagraphRange(localContent.value, selectionStart)
+}
+
+const createAiWritingMessages = (action: EditorContextAiAction, input: string): IMessage[] => {
+  const trimmedInput = input.trim()
+  if (action === 'ai-optimize') {
+    return [
+      {
+        role: 'system',
+        content: '你是专业中文编辑。请优化用户提供文本，使其更清晰、流畅、准确，并保持原意与信息完整。只输出优化后的正文，不要解释、不要加标题。'
+      },
+      {
+        role: 'user',
+        content: trimmedInput
+      }
+    ]
+  }
+
+  if (action === 'ai-continue') {
+    return [
+      {
+        role: 'system',
+        content: '你是专业中文写作助手。请基于用户文本进行自然续写，风格与语气保持一致。只输出续写内容，不要复述原文，不要解释。'
+      },
+      {
+        role: 'user',
+        content: trimmedInput
+      }
+    ]
+  }
+
+  return [
+    {
+      role: 'system',
+      content: '你是专业中文讲解助手。请解释用户提供段落的核心含义、关键术语与上下文意图。只输出解释内容，不要重复原文，不要加前后缀。'
+    },
+    {
+      role: 'user',
+      content: trimmedInput
+    }
+  ]
+}
+
+const handleAiWriting = async (action: EditorContextAiAction) => {
+  if (isAiWriting.value) {
+    ElMessage.info('AI 正在处理中，请稍候')
+    return
+  }
+
+  const editor = editorRef.value
+  if (!editor) return
+
+  const range = getAiTargetRange()
+  if (!range) return
+
+  const targetText = localContent.value.slice(range.start, range.end).trim()
+  if (!targetText) {
+    ElMessage.warning('当前段落为空，请先输入内容')
+    return
+  }
+
+  const baseContent = localContent.value
+  let rewriteBase = baseContent
+  let rewriteStart = range.start
+  let rewriteEnd = range.start
+
+  if (action === 'ai-explain') {
+    const charBefore = range.end > 0 ? baseContent[range.end - 1] : ''
+    const prefix = charBefore === '\n' ? '\n> ' : '\n\n> '
+    rewriteBase = baseContent.slice(0, range.end) + prefix + baseContent.slice(range.end)
+    rewriteStart = range.end + prefix.length
+    rewriteEnd = rewriteStart
+    localContent.value = rewriteBase
+  } else if (action === 'ai-continue') {
+    rewriteStart = range.end
+    rewriteEnd = rewriteStart
+  } else {
+    rewriteEnd = range.end
+  }
+
+  let streamErrorMessage = ''
+  isAiWriting.value = true
+  aiAbortController.value = new AbortController()
+
+  try {
+    const messages = createAiWritingMessages(action, targetText)
+    const payload = {
+      model: NOTE_AI_MODEL,
+      messages,
+      temperature: action === 'ai-optimize' ? 0.3 : 0.7,
+      max_tokens: 1024,
+      stream: true
+    }
+
+    await sendMessageStream(
+      payload as any,
+      (content) => {
+        const nextContent = rewriteBase.slice(0, rewriteStart) + content + rewriteBase.slice(rewriteEnd)
+        localContent.value = nextContent
+      },
+      async () => {
+        await nextTick()
+        if (editorRef.value) {
+          const cursor = localContent.value.length
+          editorRef.value.focus()
+          editorRef.value.setSelectionRange(cursor, cursor)
+        }
+      },
+      (error) => {
+        streamErrorMessage = (error as any)?.responseMessage || (error as any)?.message || 'AI 写作失败，请稍后重试'
+      },
+      aiAbortController.value.signal
+    )
+
+    if (streamErrorMessage) {
+      ElMessage.error(streamErrorMessage)
+    }
+  } catch (error) {
+    console.error('AI 写作失败', error)
+    ElMessage.error('AI 写作失败，请稍后重试')
+  } finally {
+    isAiWriting.value = false
+    aiAbortController.value = null
+  }
+}
+
 const handleEditorContextAction = async (action: EditorContextAction) => {
   if (isChartContextAction(action)) {
     await insertChartSyntax(chartActionMap[action] as ChartCommand)
     closeEditorContextMenu()
+    return
+  }
+
+  if (isAiContextAction(action)) {
+    closeEditorContextMenu()
+    await handleAiWriting(action)
     return
   }
 
@@ -1231,13 +1437,12 @@ const handleEditorContextAction = async (action: EditorContextAction) => {
     return
   }
 
-  const actionLabelMap: Record<'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula', string> = {
-    'ai-writing': 'AI 智能写作',
+  const actionLabelMap: Record<'insert-chart' | 'insert-image' | 'insert-formula', string> = {
     'insert-chart': '插入图表',
     'insert-image': '插入图片',
     'insert-formula': '插入公式'
   }
-  ElMessage.info(`${actionLabelMap[action as 'ai-writing' | 'insert-chart' | 'insert-image' | 'insert-formula']}功能待实现`)
+  ElMessage.info(`${actionLabelMap[action as 'insert-chart' | 'insert-image' | 'insert-formula']}功能待实现`)
   closeEditorContextMenu()
 }
 
@@ -1276,6 +1481,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (aiAbortController.value) {
+    aiAbortController.value.abort()
+    aiAbortController.value = null
+  }
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer)
     autoSaveTimer = null
@@ -1389,6 +1598,7 @@ onUnmounted(() => {
         </div>
 
         <div class="toolbar-right">
+          <span v-if="isAiWriting" class="ai-writing-status">正在 AI 写作中...</span>
           <el-button :loading="isExportingNotes" size="default" @click="exportAllNotesZip">
             导出笔记
           </el-button>
@@ -1439,8 +1649,11 @@ onUnmounted(() => {
         v-for="item in editorContextMenuItems"
         :key="item.key"
         class="context-menu-item"
-        :class="{ 'has-children': !!item.children?.length }"
-        @click.stop="item.children?.length ? null : handleEditorContextAction(item.key)"
+        :class="{
+          'has-children': !!item.children?.length,
+          'context-menu-item--disabled': isContextActionDisabled(item.key)
+        }"
+        @click.stop="item.children?.length || isContextActionDisabled(item.key) ? null : handleEditorContextAction(item.key)"
       >
         <span class="context-menu-icon">{{ item.icon }}</span>
         {{ item.label }}
@@ -1450,7 +1663,8 @@ onUnmounted(() => {
             v-for="child in item.children"
             :key="child.key"
             class="context-submenu-item"
-            @click.stop="handleEditorContextAction(child.key)"
+            :class="{ 'context-submenu-item--disabled': isContextActionDisabled(child.key) }"
+            @click.stop="isContextActionDisabled(child.key) ? null : handleEditorContextAction(child.key)"
           >
             <span class="context-menu-icon">{{ child.icon }}</span>
             {{ child.label }}
@@ -1497,6 +1711,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.ai-writing-status {
+  color: var(--primary-color);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .toolbar-middle {
@@ -1783,6 +2003,18 @@ onUnmounted(() => {
 .context-menu-item:hover {
   background-color: var(--bg-color-secondary);
   color: var(--primary-color);
+}
+
+.context-menu-item--disabled,
+.context-submenu-item--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.context-menu-item--disabled:hover,
+.context-submenu-item--disabled:hover {
+  background-color: transparent;
+  color: var(--text-color-primary);
 }
 
 .context-submenu {
