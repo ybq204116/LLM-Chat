@@ -58,6 +58,61 @@ const buildPublicUrl = (domain: string, key: string): string => {
   return `${normalizedDomain.replace(/\/$/, '')}/${key}`;
 };
 
+const createQiniuUploadToken = (
+  accessKey: string,
+  secretKey: string,
+  bucket: string,
+  key: string
+): string => {
+  const mac = new qiniu.auth.digest.Mac(accessKey, secretKey);
+  const putPolicy = new qiniu.rs.PutPolicy({
+    scope: `${bucket}:${key}`,
+    expires: 3600
+  });
+  return putPolicy.uploadToken(mac);
+};
+
+const uploadBufferToQiniu = async (
+  buffer: Buffer,
+  key: string,
+  fileType: string,
+  qiniuConfig: { accessKey: string; secretKey: string; bucket: string; publicDomain: string; uploadHost: string }
+): Promise<string> => {
+  const config = new qiniu.conf.Config();
+  const formUploader = new qiniu.form_up.FormUploader(config);
+  const putExtra = new qiniu.form_up.PutExtra();
+  if (fileType) {
+    putExtra.mimeType = fileType;
+  }
+
+  const uploadToken = createQiniuUploadToken(
+    qiniuConfig.accessKey,
+    qiniuConfig.secretKey,
+    qiniuConfig.bucket,
+    key
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    formUploader.put(uploadToken, key, buffer, putExtra, (err, body, info) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      if (!info || info.statusCode < 200 || info.statusCode >= 300) {
+        reject(new Error(`七牛上传失败: ${info?.statusCode || 'unknown'}`));
+        return;
+      }
+      if (!body?.key) {
+        reject(new Error('七牛上传失败: 缺少文件 key'));
+        return;
+      }
+      resolve();
+    });
+  });
+
+  return buildPublicUrl(qiniuConfig.publicDomain, key);
+};
+
 export const createChatImageUploadToken = async (req: AuthRequest, res: Response) => {
   try {
     const qiniuConfig = resolveQiniuConfig();
@@ -176,9 +231,13 @@ export const proxyImageGeneration = async (req: AuthRequest, res: Response) => {
   try {
     const { prompt, model, ...rest } = req.body;
     const apiKey = process.env.SILICONFLOW_API_KEY;
+    const qiniuConfig = resolveQiniuConfig();
 
     if (!apiKey) {
       return res.status(500).json({ message: 'Server API key not configured' });
+    }
+    if (!qiniuConfig) {
+      return res.status(500).json({ message: '七牛云配置不完整' });
     }
 
     const response = await axios({
@@ -202,33 +261,22 @@ export const proxyImageGeneration = async (req: AuthRequest, res: Response) => {
     const imageArray = data.images || data.data;
 
     if (data && imageArray && Array.isArray(imageArray)) {
-      const uploadsDir = path.join(__dirname, '../../uploads');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-
       for (const item of imageArray) {
         if (item.url) {
           try {
             const imageResponse = await axios.get(item.url, { responseType: 'arraybuffer' });
             const buffer = Buffer.from(imageResponse.data, 'binary');
-
-            // 生成文件名
+            const contentTypeHeader = String(imageResponse.headers?.['content-type'] || '').toLowerCase();
             const urlObj = new URL(item.url);
-            const ext = path.extname(urlObj.pathname) || '.png';
-            const filename = `${Date.now()}-${crypto.randomUUID()}${ext}`;
-            const filepath = path.join(uploadsDir, filename);
+            const extFromUrl = path.extname(urlObj.pathname).toLowerCase();
+            const ext = extFromUrl || extractExtension('', contentTypeHeader);
+            const fileType = contentTypeHeader || 'image/png';
+            const key = `${crypto.randomUUID()}${ext}`;
 
-            fs.writeFileSync(filepath, buffer);
-
-            // 构造本地 URL
-            const protocol = req.protocol;
-            const host = req.get('host');
-            const serverUrl = `${protocol}://${host}`;
-            item.url = `${serverUrl}/uploads/${filename}`;
+            item.url = await uploadBufferToQiniu(buffer, key, fileType, qiniuConfig);
 
           } catch (imgError) {
-            console.error('Failed to download and save image:', imgError);
+            console.error('Failed to upload generated image to qiniu:', imgError);
             // 下载失败则保留原 URL
           }
         }
