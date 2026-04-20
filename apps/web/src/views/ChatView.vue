@@ -71,18 +71,20 @@ const scrollToBottom = () => {
 // 将文本消息转换为VLM消息，text -> VLMContentItem[]
 const convertTextToMessageContent = (text: string) => {
   const content = [];  // VLMContentItem[]
-  const imageRegex = /!\[.*?\]\((data:image\/(png|jpg|jpeg);base64,[^)]+)\)/g;
+  const imageRegex = /!\[.*?\]\(([^)]+)\)/g;
   let match;
   let lastIndex = 0;
-  let firstTextExtracted = false; // 添加一个标志变量，用于标记是否已提取了第一段文本
 
   while ((match = imageRegex.exec(text)) !== null) {
-    const imageUrl = match[1];
+    const imageUrl = match[1]?.trim();
     const imageStartIndex = match.index;
+    const isSupportedImageUrl = /^https?:\/\//i.test(imageUrl);
+    if (!isSupportedImageUrl) {
+      continue;
+    }
 
     // 提取图片前的文本，确保不是空白字符
-    if (imageStartIndex > lastIndex && !firstTextExtracted) {
-      firstTextExtracted = true;
+    if (imageStartIndex > lastIndex) {
       const textContent = text.substring(lastIndex, imageStartIndex).trim();
       if (textContent && !/^\s*$/.test(textContent)) {
         content.push({ type: "text" as const, text: textContent });
@@ -98,8 +100,15 @@ const convertTextToMessageContent = (text: string) => {
     lastIndex = imageRegex.lastIndex;
   }
 
-  // 若没有图片，则提取整个文本
-  if (!firstTextExtracted) {
+  if (lastIndex < text.length) {
+    const tailText = text.substring(lastIndex).trim();
+    if (tailText) {
+      content.push({ type: "text" as const, text: tailText });
+    }
+  }
+
+  // 若没有提取出任何图片/文本片段，兜底作为纯文本
+  if (content.length === 0) {
     content.push({ type: "text" as const, text: text });
   }
 
@@ -143,7 +152,7 @@ const sendMessage = async (modelType: string): Promise<void> => {
             temperature: settingsStore.temperature,
             max_tokens: settingsStore.maxTokens,
             stream: settingsStore.streamResponse,
-            tools: availableTools
+            ...(modelType === 'plain' ? { tools: availableTools } : {})
         }
 
         if (settingsStore.streamResponse) {

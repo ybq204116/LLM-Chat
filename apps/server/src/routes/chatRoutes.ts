@@ -8,7 +8,8 @@ import {
   deleteConversation,
   updateConversation,
   proxyChat,
-  proxyImageGeneration
+  proxyImageGeneration,
+  createChatImageUploadToken
 } from '../controllers/chatController';
 import { authenticateToken } from '../middleware/auth';
 
@@ -19,6 +20,7 @@ router.use(authenticateToken);
 
 router.post('/completions', proxyChat); // 添加代理路由
 router.post('/images/generations', proxyImageGeneration); // 添加图片生成代理路由
+router.post('/files/upload-token', createChatImageUploadToken);
 router.get('/conversations', getConversations);
 router.get('/conversations/:conversationId/messages', getMessages);
 router.post('/conversations', createConversation);

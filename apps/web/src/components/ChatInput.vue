@@ -4,6 +4,7 @@ import { Delete, Position, Upload, Plus, Document, VideoPlay, MagicStick } from 
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import mammoth from 'mammoth'
 import * as pdfjsLib from 'pdfjs-dist'
+import request from '../utils/request'
 
 
 // 设置 PDF.js worker
@@ -31,6 +32,13 @@ import { sendMessage as sendApiMessage } from '../utils/api'
 import { useSettingsStore } from '../stores/settings'
 
 const isOptimizing = ref(false)
+
+interface ChatImageUploadTokenResponse {
+  uploadToken: string
+  uploadHost: string
+  key: string
+  url: string
+}
 
 
 
@@ -112,7 +120,7 @@ const handleSend = async () => {
     const fileContents = await Promise.all(
       selectedFiles.value.map(async (file) => {
         if (isImage(file)) {
-          return await convertImageToBase64(file)
+          return await convertImageToUrlMarkdown(file)
         } else {
           return await readFileContent(file)
         }
@@ -131,20 +139,63 @@ const handleSend = async () => {
     showUpload.value = false
   } catch (error) {
     console.error('发送失败:', error)
-    ElMessage.error('发送失败，请重试')
+    ElMessage.error(getUploadErrorMessage(error))
   }
 }
 
 // 将图片转换为base64
-const convertImageToBase64 = (file: File) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      resolve(`![${file.name}](${e.target?.result})`)
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
+const sanitizeAltText = (fileName: string): string => {
+  const baseName = fileName.replace(/\.[^.]+$/, '')
+  return (baseName || '图片')
+    .replaceAll('[', '')
+    .replaceAll(']', '')
+    .replaceAll('(', '')
+    .replaceAll(')', '')
+}
+
+const getUploadErrorMessage = (error: unknown): string => {
+  const err = error as {
+    response?: { data?: { message?: string } }
+    message?: string
+  }
+
+  if (err?.response?.data?.message) {
+    return err.response.data.message
+  }
+  if (err?.message) {
+    return err.message
+  }
+  return '图片上传失败，请稍后重试'
+}
+
+const convertImageToUrlMarkdown = async (file: File): Promise<string> => {
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('图片大小不能超过 10MB')
+  }
+
+  const tokenRes = await request.post('/chat/files/upload-token', {
+    fileName: file.name,
+    fileType: file.type,
+    fileSize: file.size
+  }) as ChatImageUploadTokenResponse
+
+  const formData = new FormData()
+  formData.append('token', tokenRes.uploadToken)
+  formData.append('key', tokenRes.key)
+  formData.append('file', file)
+
+  const uploadResponse = await fetch(tokenRes.uploadHost, {
+    method: 'POST',
+    body: formData
   })
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text()
+    throw new Error(errorText || `上传失败: ${uploadResponse.status}`)
+  }
+
+  const altText = sanitizeAltText(file.name)
+  return `![${altText}](${tokenRes.url})`
 }
 
 // 读取文件内容

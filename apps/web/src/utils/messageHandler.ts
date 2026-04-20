@@ -31,7 +31,7 @@ export interface SyncImageResponse {
 export const messageHandler = {
     // 格式化消息
     formatMessage(role: 'user' | 'assistant' | 'system' | 'tool', content: string, tool_call_id?: string): IMessage {
-        const hasImage = content.includes('![') && content.includes('](data:image/')
+        const hasImage = /!\[.*?\]\((https?:\/\/[^)\s]+)\)/i.test(content)
 
         return {
             // id: Date.now(), // 注意：IMessage 中 _id 是 string，这里可能需要适配或保持前端独有的 id

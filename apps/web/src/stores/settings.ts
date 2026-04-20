@@ -106,8 +106,8 @@ export const defaultModelOptions: ModelOption[] = [
     { label: 'Qwen2.5-7B', value: 'Qwen/Qwen2.5-7B-Instruct', type: 'plain' },
     { label: 'Qwen2.5-Coder-7B', value: 'Qwen/Qwen2.5-Coder-7B-Instruct', type: 'plain' },
     { label: 'glm-4-9b', value: 'THUDM/glm-4-9b-chat', type: 'plain' },
-    { label: 'Qwen2-VL-72B', value: 'Qwen/Qwen2-VL-72B-Instruct', type: 'visual' },
+    { label: 'Qwen2.5-VL-72B', value: 'Qwen/Qwen2.5-VL-72B-Instruct', type: 'visual' },
     { label: 'GLM-4.1V-9B', value: 'THUDM/GLM-4.1V-9B-Thinking', type: 'visual' },
-    { label: 'deepseek-vl2', value: 'deepseek-ai/deepseek-vl2', type: 'visual' },
+    { label: 'deepseek-ai', value: 'deepseek-ai/DeepSeek-OCR', type: 'visual' },
     { label: 'Kwai-Kolors/Kolors', value: 'Kwai-Kolors/Kolors', type: 'text2img' }
 ]
