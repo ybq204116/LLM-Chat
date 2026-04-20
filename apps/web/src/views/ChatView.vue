@@ -24,6 +24,9 @@ const showSettings = ref(false)
 const scroller = ref<any>(null)
 // AbortController 用于中止请求
 const abortController = ref<AbortController | null>(null)
+// 是否自动跟随到底部（用户上滑后会关闭）
+const shouldAutoScroll = ref(true)
+const BOTTOM_THRESHOLD = 80
 
 // 转换消息列表以适配虚拟滚动
 const virtualMessages = computed(() => {
@@ -42,13 +45,13 @@ const virtualMessages = computed(() => {
 // 监听消息变化，滚动到底部
 watch(() => chatStore.messages.length, () => {
     nextTick(() => {
-        scrollToBottom()
+        maybeScrollToBottom()
     })
 })
 
 // 监听最后一条消息内容变化（流式生成时），滚动到底部
 watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
-    if (chatStore.activeConversationId === chatStore.currentGeneratingId) {
+    if (chatStore.activeConversationId === chatStore.currentGeneratingId && shouldAutoScroll.value) {
         nextTick(() => {
             scrollToBottom()
         })
@@ -57,10 +60,28 @@ watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
 
 // 切换对话时滚动到底部
 watch(() => chatStore.activeConversationId, () => {
+    shouldAutoScroll.value = true
     nextTick(() => {
         scrollToBottom()
     })
 })
+
+const isNearBottom = (el: HTMLElement): boolean => {
+    const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight)
+    return distanceToBottom <= BOTTOM_THRESHOLD
+}
+
+const handleScrollerScroll = (event: Event) => {
+    const el = event.target as HTMLElement | null
+    if (!el) return
+    shouldAutoScroll.value = isNearBottom(el)
+}
+
+const maybeScrollToBottom = (force = false) => {
+    if (force || shouldAutoScroll.value) {
+        scrollToBottom()
+    }
+}
 
 const scrollToBottom = () => {
     if (scroller.value) {
@@ -334,6 +355,7 @@ const handleSend = async (content: string) => {
     console.log('发送消息')
 
     if (isLoading.value) return
+    shouldAutoScroll.value = true
     // 添加用户消息和助理的空消息
     chatStore.addMessage(messageHandler.formatMessage('user', content))
     chatStore.addMessage(messageHandler.formatMessage('assistant', ''), false)
@@ -525,6 +547,7 @@ const handleExport = () => {
                         :min-item-size="60"
                         class="scroller"
                         key-field="id"
+                        @scroll.passive="handleScrollerScroll"
                     >
                         <template v-slot="{ item, index, active }">
                             <DynamicScrollerItem
