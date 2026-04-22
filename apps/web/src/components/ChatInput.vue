@@ -4,6 +4,7 @@ import { Delete, Position, Upload, Plus, Document, VideoPlay, MagicStick } from 
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import mammoth from 'mammoth'
 import * as pdfjsLib from 'pdfjs-dist'
+import * as XLSX from 'xlsx'
 import request from '../utils/request'
 
 
@@ -153,6 +154,24 @@ const sanitizeAltText = (fileName: string): string => {
     .replaceAll(')', '')
 }
 
+const normalizeFileText = (text: string, fileName: string): string => {
+  const normalized = String(text ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\0').join('')
+    .replace(/^\s+/, '')
+    .trimEnd()
+
+  if (!normalized) {
+    return `[${fileName}] 文件内容为空或当前文件为图片型/扫描型文档，暂无法提取文本。`
+  }
+  return normalized
+}
+
+const wrapDocumentContent = (fileName: string, text: string): string => {
+  const normalized = normalizeFileText(text, fileName)
+  return `\`\`\`document\n[文件] ${fileName}\n${normalized}\n\`\`\``
+}
+
 const getUploadErrorMessage = (error: unknown): string => {
   const err = error as {
     response?: { data?: { message?: string } }
@@ -199,6 +218,52 @@ const convertImageToUrlMarkdown = async (file: File): Promise<string> => {
 }
 
 // 读取文件内容
+const parseExcelFile = async (file: File): Promise<string> => {
+  const arrayBuffer = await file.arrayBuffer()
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+  const sections: string[] = []
+
+  workbook.SheetNames.forEach((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName]
+    const rows = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(worksheet, {
+      header: 1,
+      raw: false,
+      defval: ''
+    })
+
+    const normalizedRows = rows
+      .map((row) => (Array.isArray(row) ? row : [row]))
+      .filter((row) => row.some((cell) => String(cell ?? '').trim() !== ''))
+
+    if (normalizedRows.length === 0) {
+      return
+    }
+
+    const width = Math.max(...normalizedRows.map((row) => row.length), 1)
+    const tableRows = normalizedRows.map((row) =>
+      Array.from({ length: width }, (_, index) => String(row[index] ?? '').replace(/\n/g, ' ').trim())
+    )
+    const hasHeader = tableRows.length > 1
+    const header = hasHeader ? tableRows[0] : Array.from({ length: width }, (_, i) => `列${i + 1}`)
+    const body = hasHeader ? tableRows.slice(1) : tableRows
+    const divider = Array.from({ length: width }, () => '---')
+
+    const lines = [
+      `### 工作表: ${sheetName}`,
+      `| ${header.join(' | ')} |`,
+      `| ${divider.join(' | ')} |`,
+      ...body.map((row) => `| ${row.join(' | ')} |`)
+    ]
+    sections.push(lines.join('\n'))
+  })
+
+  const content = sections.length > 0
+    ? sections.join('\n\n')
+    : `### 工作表\n(空表格：${file.name})`
+
+  return wrapDocumentContent(file.name, content)
+}
+
 const readFileContent = async (file: File) => {
   try {
     const fileName = file.name.toLowerCase()
@@ -206,7 +271,7 @@ const readFileContent = async (file: File) => {
     if (fileName.endsWith('.docx')) {
       const arrayBuffer = await file.arrayBuffer()
       const result = await mammoth.extractRawText({ arrayBuffer })
-      return `\`\`\`document\n${result.value}\n\`\`\``
+      return wrapDocumentContent(file.name, result.value)
     } else if (fileName.endsWith('.pdf')) {
       const arrayBuffer = await file.arrayBuffer()
       const loadingTask = pdfjsLib.getDocument(arrayBuffer)
@@ -220,13 +285,15 @@ const readFileContent = async (file: File) => {
         fullText += pageText + '\n\n'
       }
       
-      return `\`\`\`document\n${fullText}\n\`\`\``
+      return wrapDocumentContent(file.name, fullText)
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      return await parseExcelFile(file)
     } else {
       // 默认作为文本文件读取
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = (e) => {
-          resolve(`\`\`\`document\n${e.target?.result}\n\`\`\``)
+          resolve(wrapDocumentContent(file.name, String(e.target?.result ?? '')))
         }
         reader.onerror = reject
         reader.readAsText(file)
@@ -254,7 +321,10 @@ const handlePreviewFile = async (file: File) => {
   
   try {
     const content = await readFileContent(file) as string
-    previewFileContent.value = content.replace(/^```document\n/, '').replace(/\n```$/, '')
+    previewFileContent.value = content
+      .replace(/^```[^\n]*\n/, '')
+      .replace(/\n```$/, '')
+      .trim()
   } catch (error) {
     previewFileContent.value = '文件解析失败或不支持预览：\n' + error
   } finally {
@@ -363,7 +433,7 @@ const handleStop = () => {
       <!-- 添加文件上传区域 -->
       <div class="upload-area" v-if="showUpload">
         <el-upload class="upload-component" :action="null" :auto-upload="false" :on-change="handleFileChange"
-          :show-file-list="false" multiple accept="image/*,.txt,.md,.docx,.pdf">
+          :show-file-list="false" multiple accept="image/*,.txt,.md,.docx,.pdf,.xlsx,.xls">
           <!-- trigger	触发文件选择框的内容 -->
           <template #trigger>
             <el-button type="primary" :icon="Plus">添加文件</el-button>

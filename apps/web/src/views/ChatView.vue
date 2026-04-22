@@ -89,6 +89,23 @@ const scrollToBottom = () => {
     }
 }
 
+const persistAbortedAssistantMessage = async () => {
+    const lastMsg = currentChatMessages.value[currentChatMessages.value.length - 1]
+    if (!lastMsg || lastMsg.role !== 'assistant') return
+
+    const currentContent = (lastMsg.content || '').trim()
+    const stopTag = '（已停止生成）'
+    const nextContent = currentContent
+        ? (currentContent.endsWith(stopTag) ? currentContent : `${currentContent}\n\n${stopTag}`)
+        : stopTag
+
+    chatStore.updateLastMessage(nextContent, lastMsg.reasoning_content, lastMsg.tool_calls)
+
+    if (!lastMsg._id) {
+        await chatStore.saveLastMessage()
+    }
+}
+
 // 将文本消息转换为VLM消息，text -> VLMContentItem[]
 const convertTextToMessageContent = (text: string) => {
   const content = [];  // VLMContentItem[]
@@ -238,7 +255,7 @@ const sendMessage = async (modelType: string): Promise<void> => {
     } catch (error: any) {
         if (error.name === 'AbortError') {
             console.log('请求已中止')
-            chatStore.updateLastMessage('（已停止生成）', '')
+            await persistAbortedAssistantMessage()
             chatStore.currentGeneratingId = null
             chatStore.isLoading = false
             return
@@ -311,7 +328,7 @@ const sendT2IMessage = async () => {
     } catch (error: any) {
         if (error.name === 'AbortError') {
             console.log('请求已中止')
-            chatStore.updateLastMessage('（已停止生成）')
+            await persistAbortedAssistantMessage()
             chatStore.currentGeneratingId = null
             chatStore.isLoading = false
             return

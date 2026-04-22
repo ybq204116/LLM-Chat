@@ -23,6 +23,9 @@ const emit = defineEmits(['update', 'delete', 'regenerate'])
 const isEditing = ref(false)
 const editContent = ref('')
 const editInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const previewDialogVisible = ref(false)
+const previewFileName = ref('文件预览')
+const previewFileContent = ref('')
 
 // 从 store 中获取 loading 状态
 const chatStore = useChatStore()
@@ -95,6 +98,25 @@ const copyToClipboard = async (text: string) => {
   }
 }
 
+const parseDocumentBlock = (rawText: string) => {
+  const normalized = rawText.replace(/\r\n/g, '\n')
+  const lines = normalized.split('\n')
+  const firstLine = (lines[0] || '').trim()
+  const prefix = '[文件] '
+
+  if (firstLine.startsWith(prefix)) {
+    return {
+      fileName: firstLine.slice(prefix.length).trim() || '文件预览',
+      content: lines.slice(1).join('\n').trim()
+    }
+  }
+
+  return {
+    fileName: '文件预览',
+    content: normalized.trim()
+  }
+}
+
 // 处理代码块点击事件
 const handleCodeBlockClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement
@@ -102,6 +124,13 @@ const handleCodeBlockClick = (event: MouseEvent) => {
   if (preElement) {
     const codeElement = preElement.querySelector('code')
     if (codeElement) {
+      if (preElement.classList.contains('is-document')) {
+        const parsed = parseDocumentBlock(codeElement.textContent || '')
+        previewFileName.value = parsed.fileName
+        previewFileContent.value = parsed.content
+        previewDialogVisible.value = true
+        return
+      }
       copyToClipboard(codeElement.textContent || '')
     }
   }
@@ -232,6 +261,14 @@ const handleCopyAll = async () => {
       </div>
     </div>
   </div>
+  <el-dialog v-model="previewDialogVisible" :title="previewFileName" width="60%" append-to-body>
+    <el-input
+      v-model="previewFileContent"
+      type="textarea"
+      :autosize="{ minRows: 10, maxRows: 20 }"
+      readonly
+    />
+  </el-dialog>
 </template>
 
 <style lang="scss" scoped>
@@ -324,27 +361,57 @@ const handleCopyAll = async () => {
         font-size: 85%;
         line-height: 1.45;
         background-color: var(--code-block-bg);
+        color: var(--code-text);
         border-radius: var(--border-radius);
         margin: 0.5rem 0;
         border: 1px solid var(--border-color);
 
         // 文档类型样式：限制高度为3行，并限制宽度
         &.is-document {
-          max-height: 7.5rem; // 约 2rem(header) + 3 * 1.45em(content) + 1rem(padding)
-          max-width: 400px;
-          overflow-y: auto;
+          max-width: 200px;
+          padding: 0.75rem;
+          overflow: hidden;
+          cursor: pointer;
+          background-color: var(--bg-color-secondary);
+          border: 1px dashed var(--border-color);
           
-          code {
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            /* autoprefixer: ignore next */
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            white-space: pre-wrap; // 允许换行以配合 line-clamp
+          .file-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            min-height: 92px;
           }
 
-          // 悬浮时显示完整内容（可选，但通常用户希望能看到一点）
-          // 如果用户明确说只显示三行，我们就不加自动展开了，保持简洁
+          .file-icon {
+            font-size: 2rem;
+            line-height: 1;
+          }
+
+          .file-name {
+            width: 100%;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-color-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          &:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.12);
+          }
+
+          .code-header,
+          &::after {
+            display: none;
+          }
+
+          code {
+            display: none;
+          }
         }
         
         // 代码头部样式
@@ -391,7 +458,7 @@ const handleCopyAll = async () => {
         code {
           padding: 0;
           background-color: transparent;
-          color: inherit;
+          color: var(--code-text);
           display: block;
           font-family: var(--code-font-family);
         }

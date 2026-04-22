@@ -4,6 +4,29 @@ import katex from 'katex'
 import 'highlight.js/styles/github.css'
 import 'katex/dist/katex.min.css'
 
+const escapeHtmlAttribute = (value: string): string => {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+const getDocumentMeta = (rawText: string) => {
+  const normalized = rawText.replace(/\r\n/g, '\n')
+  const lines = normalized.split('\n')
+  const firstLine = (lines[0] || '').trim()
+  const prefix = '[文件] '
+  const fileName = firstLine.startsWith(prefix)
+    ? firstLine.slice(prefix.length).trim() || '未命名文件'
+    : '文件预览'
+
+  return {
+    fileName,
+    raw: normalized
+  }
+}
+
 // 创建 markdown-it 实例
 const md = new MarkdownIt({
   html: true,
@@ -19,6 +42,11 @@ const md = new MarkdownIt({
 
     if (isMermaid) {
       return `<pre class="hljs mermaid-source"><div class="code-header"><span class="code-lang">mermaid</span></div><code class="language-mermaid">${md.utils.escapeHtml(str)}</code></pre>`
+    }
+
+    if (isDocument) {
+      const { fileName, raw } = getDocumentMeta(str)
+      return `<pre class="hljs is-document" data-file-name="${escapeHtmlAttribute(fileName)}"><div class="file-card"><div class="file-icon" aria-hidden="true">📄</div><div class="file-name">${md.utils.escapeHtml(fileName)}</div></div><code>${md.utils.escapeHtml(raw)}</code></pre>`
     }
 
     if (language && !isDocument && hljs.getLanguage(language)) {
