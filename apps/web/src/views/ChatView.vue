@@ -194,12 +194,32 @@ const sendMessage = async (modelType: string): Promise<void> => {
         }
 
         if (settingsStore.streamResponse) {
+            let lastUpdateTime = Date.now()
+            const THROTTLE_INTERVAL = 80 // 80ms 节流，保证每秒最多渲染 12 次，视觉平滑且性能高
+
+            let finalContent = ''
+            let finalReasoning = ''
+            let finalToolCalls: any[] | undefined = undefined
+
             await sendMessageStream(
                 payload,
                 (content, reasoning_content, tool_calls) => {
-                    chatStore.updateLastMessage(content, reasoning_content, tool_calls)
+                    // 记录最新内容
+                    finalContent = content
+                    finalReasoning = reasoning_content || ''
+                    finalToolCalls = tool_calls
+
+                    const now = Date.now()
+                    // 只有超过节流时间才更新 store 触发 UI 重绘
+                    if (now - lastUpdateTime > THROTTLE_INTERVAL) {
+                        chatStore.updateLastMessage(content, reasoning_content, tool_calls)
+                        lastUpdateTime = now
+                    }
                 },
                 async () => {
+                    // 完成时强制更新一次，确保最后一点内容不被节流掉
+                    chatStore.updateLastMessage(finalContent, finalReasoning, finalToolCalls)
+                    
                     // 生成完成后，保存 AI 的完整回复到后端
                     await chatStore.saveLastMessage()
                     
