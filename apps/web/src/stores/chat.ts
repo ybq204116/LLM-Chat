@@ -3,10 +3,19 @@ import request from '../utils/request'
 import { useAuthStore } from './auth'
 import type { IMessage, IConversation } from '@llm-chat/shared'
 
+type ChatMessage = IMessage & { clientId: string }
+
+const createClientId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+
 interface ChatState {
   conversations: IConversation[]
   activeConversationId: string | null
-  messages: IMessage[] // 当前选中对话的消息列表
+  messages: ChatMessage[] // 当前选中对话的消息列表
   isLoading: boolean
   isSending: boolean
   currentGeneratingId: string | null
@@ -57,7 +66,8 @@ export const useChatStore = defineStore('chat', {
         const res: any = await request.get(`/chat/conversations/${id}/messages`)
         this.messages = res.map((msg: any) => ({
           ...msg,
-          timestamp: msg.timestamp || new Date().toISOString()
+          timestamp: msg.timestamp || new Date().toISOString(),
+          clientId: msg.clientId || msg._id || createClientId()
         }))
       } catch (error) {
         console.error('获取消息失败', error)
@@ -84,9 +94,10 @@ export const useChatStore = defineStore('chat', {
       if (!this.activeConversationId) return
 
       // 1. UI 立即显示（乐观更新）
-      const tempMsg: IMessage = {
+      const tempMsg: ChatMessage = {
         ...message,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        clientId: createClientId()
       }
       this.messages.push(tempMsg)
 

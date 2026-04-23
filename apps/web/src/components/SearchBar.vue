@@ -38,7 +38,7 @@ const filteredHistory = computed(() => {
         
       return {
         content: cleanContent || '（无文本内容）', // 如果清理后为空（例如只有图片），显示提示
-        id: msg._id || (msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp)
+        id: (msg as any).clientId || msg._id || (msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp)
       }
     })
     .slice(0, 5)
@@ -75,12 +75,14 @@ const handleSearchClick = (e: Event) => {
 const emit = defineEmits(['select'])
 
 // 处理点击搜索项
-const handleSelect = (item: { content: string; id: string | undefined }) => {
+const handleSelect = (item: { content: string; id: string | Date | undefined }) => {
   search.value = item.content
   show.value = false
   
   // 触发选择事件，将 ID 传递给父组件处理跳转
-  emit('select', item.id)
+  if (item.id != null) {
+    emit('select', String(item.id))
+  }
 }
 
 // 处理提问

@@ -32,14 +32,6 @@ const BOTTOM_THRESHOLD = 80
 const virtualMessages = computed(() => {
     return chatStore.messages
       .filter((m: any) => !(m.role === 'assistant' && (!m.content || m.content.trim() === '') && m.tool_calls && m.tool_calls.length > 0))
-      .map((m: any, index: number) => ({
-        ...m,
-        // 确保每条消息都有唯一ID
-        // 1. 如果有 _id，使用 _id
-        // 2. 如果没有 _id（如刚发送的消息），使用 timestamp + index 组合
-        // 这样可以避免当 timestamp 相同时（连续快速发送）导致 key 冲突
-        id: m._id || `${m.timestamp}_${index}`
-    }))
 })
 
 // 监听消息变化，滚动到底部
@@ -480,7 +472,7 @@ const handleRegenerate = async (message: any) => {
 
 // 处理搜索结果跳转
 const handleSearchSelect = (messageId: string) => {
-    const index = virtualMessages.value.findIndex((m: any) => m.id === messageId)
+    const index = virtualMessages.value.findIndex((m: any) => m.clientId === messageId || m._id === messageId)
     if (index !== -1 && scroller.value) {
         scroller.value.scrollToItem(index)
         
@@ -583,7 +575,7 @@ const handleExport = () => {
                         :items="virtualMessages"
                         :min-item-size="60"
                         class="scroller"
-                        key-field="id"
+                        key-field="clientId"
                         @scroll.passive="handleScrollerScroll"
                     >
                         <template v-slot="{ item, index, active }">
