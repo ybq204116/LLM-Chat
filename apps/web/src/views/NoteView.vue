@@ -51,13 +51,27 @@ interface NoteImageUploadTokenResponse {
   url: string
 }
 
+type MarkdownRenderRequest = {
+  id: number
+  content: string
+}
+
+type MarkdownRenderResponse = {
+  id: number
+  html: string
+  error?: string
+}
+
 const activeNote = computed(() => noteStore.activeNoteContent)
-const renderedContent = computed(() => renderMarkdown(localContent.value))
+const renderedContent = ref('')
 const normalizedTitle = computed(() => localTitle.value.trim() || '无标题笔记')
 const hasUnsavedChanges = computed(() => {
   return normalizedTitle.value !== lastSavedTitle.value || localContent.value !== lastSavedContent.value
 })
 const syncedNoteId = ref<string | null>(null)
+const markdownWorkerRef = ref<Worker | null>(null)
+const markdownRenderErrorShown = ref(false)
+let markdownRenderTaskRequestId = 0
 
 type EditorContextChartAction =
   | 'chart-flowchart'
@@ -156,6 +170,61 @@ const renderMermaidCharts = async () => {
   }
 }
 
+const renderMarkdownWithFallback = (content: string) => {
+  renderedContent.value = renderMarkdown(content)
+}
+
+const requestMarkdownRender = (content: string) => {
+  const worker = markdownWorkerRef.value
+  if (!worker) {
+    renderMarkdownWithFallback(content)
+    return
+  }
+
+  markdownRenderTaskRequestId += 1
+  const payload: MarkdownRenderRequest = {
+    id: markdownRenderTaskRequestId,
+    content
+  }
+  worker.postMessage(payload)
+}
+
+const initMarkdownWorker = () => {
+  try {
+    const worker = new Worker(new URL('../workers/markdown.worker.ts', import.meta.url), { type: 'module' })
+    markdownWorkerRef.value = worker
+
+    worker.onmessage = (event: MessageEvent<MarkdownRenderResponse>) => {
+      const { id, html, error } = event.data
+      if (id !== markdownRenderTaskRequestId) return
+
+      if (error) {
+        if (!markdownRenderErrorShown.value) {
+          markdownRenderErrorShown.value = true
+          ElMessage.warning('实时预览切换到主线程渲染')
+        }
+        renderMarkdownWithFallback(localContent.value)
+        return
+      }
+
+      markdownRenderErrorShown.value = false
+      renderedContent.value = html
+    }
+
+    worker.onerror = () => {
+      markdownWorkerRef.value = null
+      if (!markdownRenderErrorShown.value) {
+        markdownRenderErrorShown.value = true
+        ElMessage.warning('实时预览切换到主线程渲染')
+      }
+      renderMarkdownWithFallback(localContent.value)
+    }
+  } catch {
+    markdownWorkerRef.value = null
+    renderMarkdownWithFallback(localContent.value)
+  }
+}
+
 const loadNoteFromRoute = async () => {
   const routeNoteId = route.params.noteId as string | undefined
 
@@ -218,6 +287,14 @@ watch(
 )
 
 watch(
+  () => localContent.value,
+  (content) => {
+    requestMarkdownRender(content)
+  },
+  { immediate: true }
+)
+
+watch(
   () => renderedContent.value,
   () => {
     void renderMermaidCharts()
@@ -226,6 +303,8 @@ watch(
 )
 
 onMounted(async () => {
+  initMarkdownWorker()
+  requestMarkdownRender(localContent.value)
   await loadNoteFromRoute()
 })
 
@@ -1484,6 +1563,10 @@ onUnmounted(() => {
   if (aiAbortController.value) {
     aiAbortController.value.abort()
     aiAbortController.value = null
+  }
+  if (markdownWorkerRef.value) {
+    markdownWorkerRef.value.terminate()
+    markdownWorkerRef.value = null
   }
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer)
