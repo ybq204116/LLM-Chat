@@ -427,46 +427,41 @@ const handleStop = () => {
   <div class="chat-input-container">
     <!-- Slash Command Menu -->
 
-
-    <!-- 输入框和按钮的组合 -->
-    <div class="input-wrapper">
-      <!-- 添加文件上传区域 -->
-      <div class="upload-area" v-if="showUpload">
+    <div class="upload-area" v-if="showUpload || selectedFiles.length">
+      <div class="upload-head">
         <el-upload class="upload-component" :action="null" :auto-upload="false" :on-change="handleFileChange"
           :show-file-list="false" multiple accept="image/*,.txt,.md,.docx,.pdf,.xlsx,.xls">
-          <!-- trigger	触发文件选择框的内容 -->
           <template #trigger>
             <el-button type="primary" :icon="Plus">添加文件</el-button>
           </template>
         </el-upload>
-
-        <!-- 预览区域 -->
-        <div class="preview-list" v-if="selectedFiles.length">
-          <div v-for="(file, index) in selectedFiles" :key="index" class="preview-item">
-            <!-- 图片预览 -->
-            <el-image 
-              v-if="isImage(file)" 
-              :src="getPreviewUrl(file)" 
-              :preview-src-list="selectedFiles.filter(isImage).map(getPreviewUrl)"
-              :initial-index="selectedFiles.filter(isImage).findIndex(f => f === file)"
-              class="preview-image" 
-              fit="cover"
-              hide-on-click-modal
-              :preview-teleported="true"
-            />
-            <!-- 文件名预览 -->
-            <div v-else class="file-preview" @click="handlePreviewFile(file)">
-              <el-icon>
-                <Document />
-              </el-icon>
-              <span>{{ file.name }}</span>
-            </div>
-            <!-- 删除按钮 -->
-            <el-button class="delete-btn" type="danger" :icon="Delete" circle @click="removeFile(index)" />
-          </div>
-        </div>
       </div>
 
+      <div class="preview-list" v-if="selectedFiles.length">
+        <div v-for="(file, index) in selectedFiles" :key="index" class="preview-item">
+          <el-image 
+            v-if="isImage(file)" 
+            :src="getPreviewUrl(file)" 
+            :preview-src-list="selectedFiles.filter(isImage).map(getPreviewUrl)"
+            :initial-index="selectedFiles.filter(isImage).findIndex(f => f === file)"
+            class="preview-image" 
+            fit="cover"
+            hide-on-click-modal
+            :preview-teleported="true"
+          />
+          <div v-else class="file-preview" @click="handlePreviewFile(file)">
+            <el-icon>
+              <Document />
+            </el-icon>
+            <span>{{ file.name }}</span>
+          </div>
+          <el-button class="delete-btn" type="danger" :icon="Delete" circle @click="removeFile(index)" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 输入框和按钮的组合 -->
+    <div class="input-wrapper">
       <el-input v-model="messageText" type="textarea" :rows="2" :autosize="{ minRows: 2, maxRows: 5 }"
         :placeholder="placeholder" resize="none" 
         @keydown="handleKeydown"
@@ -573,16 +568,30 @@ const handleStop = () => {
 }
 
 .upload-area {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   padding: 1rem;
   border: 2px dashed var(--border-color);
   border-radius: var(--border-radius);
+  max-height: min(40vh, 320px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  .upload-head {
+    display: flex;
+    justify-content: flex-start;
+    flex-shrink: 0;
+  }
 
   .preview-list {
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
     margin-top: 1rem;
+    max-height: min(30vh, 220px);
+    overflow-y: auto;
+    align-content: flex-start;
+    padding-right: 0.25rem;
 
     .preview-item {
       position: relative;
